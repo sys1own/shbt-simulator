@@ -39,6 +39,12 @@ jobs:
       - name: Run release tests
         run: cargo test --release
 
+      - name: Run Python simulator tests
+        run: |
+          pip install -r requirements.txt
+          cp target/release/libshbt_simulator.so target/release/shbt_simulator.so
+          PYTHONPATH=target/release python3 -m pytest tests/test_simulator.py -v
+
       - name: Run Python audit example
         run: |
           cp target/release/libshbt_simulator.so target/release/shbt_simulator.so
