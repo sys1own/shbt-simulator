@@ -35,9 +35,6 @@ The paper and simulator are developed **in lockstep**:
   `shbt_simulator.HolographicProjection`, etc.
 - The file [`paper_references.md`](paper_references.md) provides a complete mapping from paper sections to simulator methods, making it easy to navigate between the theory and its computational realisation.
 
-> **If you change the code, you must also update the paper — and vice versa.**  
-> The repository enforces this by having the paper’s numerical values directly tied to the simulator’s outputs.
-
 ---
 
 ## 📦 Repository Structure
