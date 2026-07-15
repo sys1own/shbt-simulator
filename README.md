@@ -116,7 +116,7 @@ The main entry point is the Python script `examples/run_audit.py`. It constructs
 python examples/run_audit.py
 ```
 
-Expected output (excerpt):
+Expected output:
 
 ```
 Branch: (26, 8, 312)
