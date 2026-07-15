@@ -12,6 +12,13 @@ from typing import Iterable, Mapping, Sequence
 
 import numpy as np
 
+try:
+    import shbt_simulator as _rs  # type: ignore[import]
+    _HAS_RUST = True
+except Exception:  # pragma: no cover
+    _rs = None  # type: ignore[assignment]
+    _HAS_RUST = False
+
 
 BENCHMARK_BRANCH = (26, 8, 312)
 LEPTON_LEVEL = 26
@@ -1026,13 +1033,37 @@ class BaryogenesisOptimizer:
         return result
 
 
+def _run_rust_audit() -> dict[str, object]:
+    """Run the unified Rust audit if the compiled extension is available."""
+    assert _rs is not None
+    sim = _rs.ShbtSimulator()
+    report = sim.run_full_audit()
+    d = report.to_dict()
+
+    print("SHBT core lifecycle (Rust)")
+    print(f"  branch                     : {report.branch}")
+    print(f"  delta_fr                   : {report.framing_defect:.6e}")
+    print(f"  modular_invariant          : {report.modular_invariant}")
+    print(f"  zero_energy_locked         : {report.zero_energy_locked}")
+    print(f"  projection_dimension_26_to_4 : {report.projection_dimension_26_to_4}")
+    print(f"  eta_b                      : {report.eta_b:.12e}")
+    print(f"  stress_energy_preserved    : {report.stress_energy_preserved}")
+    print(f"  bulk_metric_slices         : {report.metric_slice_count}")
+    print(f"  crystallized_log_entries   : {report.history_entry_count}")
+    return d
+
+
 def main(argv: Sequence[str] | None = None) -> dict[str, object]:
     parser = argparse.ArgumentParser(description="Run the SHBT boundary-to-observer coordinate compilation lifecycle.")
     parser.add_argument("--particles", type=int, default=512, help="particle count for the baryogenesis benchmark")
     parser.add_argument("--observer-radius-fraction", type=float, default=0.125, help="fraction of R_H used for observer radius")
     parser.add_argument("--redshift-max", type=float, default=3.0, help="maximum redshift for the past light cone")
     parser.add_argument("--redshift-samples", type=int, default=9, help="number of causal samples")
+    parser.add_argument("--pure-python", action="store_true", help="force the pure-Python reference implementation")
     args = parser.parse_args(argv)
+
+    if _HAS_RUST and not args.pure_python:
+        return _run_rust_audit()
 
     boundary = StaticBoundary()
     boundary_report = boundary.verify_equations()
