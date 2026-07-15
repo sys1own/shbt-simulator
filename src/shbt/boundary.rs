@@ -1,5 +1,7 @@
 #![allow(non_snake_case)]
 
+use pyo3::prelude::*;
+use pyo3::types::PyDict;
 use rug::float::Constant;
 use rug::{Complex, Float, Rational};
 
@@ -19,6 +21,7 @@ const LOW_SU3_WEIGHTS: [(u32, u32); 3] = [(0, 0), (1, 0), (0, 1)];
 const CHARGE_EMBEDDING: [u32; 3] = [LEPTON_LEVEL - 4, LEPTON_LEVEL - 3, LEPTON_LEVEL];
 
 #[derive(Debug, Clone)]
+#[pyclass]
 pub struct EntropyUpdate {
     pub n: usize,
     pub coordinate: (usize, usize),
@@ -33,6 +36,7 @@ pub struct EntropyUpdate {
 }
 
 #[derive(Debug, Clone)]
+#[pyclass]
 pub struct TemporalKernelAudit {
     pub H: Float,
     pub dot_S_total: Float,
@@ -42,6 +46,7 @@ pub struct TemporalKernelAudit {
 }
 
 #[derive(Debug, Clone)]
+#[pyclass]
 pub struct VerificationReport {
     pub framing_defect: Float,
     pub loading_normalized: bool,
@@ -53,6 +58,66 @@ pub struct VerificationReport {
     pub zero_energy_locked: bool,
     pub projection_dimension_26_to_4: bool,
     pub all_passed: bool,
+}
+
+#[pymethods]
+impl EntropyUpdate {
+    pub fn to_dict<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyDict>> {
+        let d = PyDict::new_bound(py);
+        d.set_item("n", self.n)?;
+        d.set_item("coordinate", self.coordinate)?;
+        d.set_item("feedback_signal", self.feedback_signal.to_f64())?;
+        d.set_item("delta_B", self.delta_B.to_f64())?;
+        d.set_item("delta_S", self.delta_S.to_f64())?;
+        d.set_item("delta_T", self.delta_T.to_f64())?;
+        d.set_item("D_n", self.D_n.to_f64())?;
+        d.set_item("delta_D", self.delta_D.to_f64())?;
+        d.set_item("remaining_B", self.remaining_B.to_f64())?;
+        d.set_item("remaining_E", self.remaining_E.to_f64())?;
+        Ok(d)
+    }
+}
+
+#[pymethods]
+impl TemporalKernelAudit {
+    pub fn to_dict<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyDict>> {
+        let d = PyDict::new_bound(py);
+        d.set_item("H", self.H.to_f64())?;
+        d.set_item("dot_S_total", self.dot_S_total.to_f64())?;
+        let grad: Vec<Vec<f64>> = self
+            .local_gradient
+            .iter()
+            .map(|row| row.iter().map(|v| v.to_f64()).collect())
+            .collect();
+        d.set_item("local_gradient", grad)?;
+        d.set_item("dot_T", self.dot_T.to_f64())?;
+        d.set_item("perception_identity_holds", self.perception_identity_holds)?;
+        Ok(d)
+    }
+}
+
+#[pymethods]
+impl VerificationReport {
+    pub fn to_dict<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyDict>> {
+        let d = PyDict::new_bound(py);
+        d.set_item("framing_defect", self.framing_defect.to_f64())?;
+        d.set_item("loading_normalized", self.loading_normalized)?;
+        d.set_item(
+            "entanglement_density_normalized",
+            self.entanglement_density_normalized,
+        )?;
+        d.set_item("dominant_sequence_matches", self.dominant_sequence_matches)?;
+        d.set_item("modular_S_commutator", self.modular_S_commutator.to_f64())?;
+        d.set_item("modular_T_commutator", self.modular_T_commutator.to_f64())?;
+        d.set_item("modular_invariant", self.modular_invariant)?;
+        d.set_item("zero_energy_locked", self.zero_energy_locked)?;
+        d.set_item(
+            "projection_dimension_26_to_4",
+            self.projection_dimension_26_to_4,
+        )?;
+        d.set_item("all_passed", self.all_passed)?;
+        Ok(d)
+    }
 }
 
 #[derive(Debug, Clone)]

@@ -2,6 +2,8 @@
 
 use crate::shbt::boundary::StaticBoundary;
 use crate::shbt::boundary::PREC;
+use pyo3::prelude::*;
+use pyo3::types::PyDict;
 use rug::float::Constant;
 use rug::Float;
 
@@ -14,6 +16,7 @@ const SU3_DIMENSION: u32 = 8;
 const SO10_DIMENSION: u32 = 45;
 
 #[derive(Debug, Clone)]
+#[pyclass]
 pub struct BaryogenesisIdentity {
     pub sphaleron_coefficient: Float,
     pub jarlskog_topological: Float,
@@ -26,6 +29,7 @@ pub struct BaryogenesisIdentity {
 }
 
 #[derive(Debug, Clone)]
+#[pyclass]
 pub struct FieldSimulation {
     pub field_name: String,
     pub particle_count: usize,
@@ -38,6 +42,7 @@ pub struct FieldSimulation {
 }
 
 #[derive(Debug, Clone)]
+#[pyclass]
 pub struct BenchmarkDelta {
     pub standard: FieldSimulation,
     pub optimized: FieldSimulation,
@@ -49,6 +54,71 @@ pub struct BenchmarkDelta {
     pub operation_reduction_fraction: Float,
     pub memory_reduction_fraction: Float,
     pub stress_energy_preserved: bool,
+}
+
+#[pymethods]
+impl BaryogenesisIdentity {
+    pub fn to_dict<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyDict>> {
+        let d = PyDict::new_bound(py);
+        d.set_item("sphaleron_coefficient", self.sphaleron_coefficient.to_f64())?;
+        d.set_item("jarlskog_topological", self.jarlskog_topological.to_f64())?;
+        d.set_item("Pi_rank", self.Pi_rank.to_f64())?;
+        d.set_item("deltaPi_126_match", self.deltaPi_126_match.to_f64())?;
+        d.set_item("structural_exponent", self.structural_exponent.to_f64())?;
+        d.set_item(
+            "modular_restoration_scale_gev",
+            self.modular_restoration_scale_gev.to_f64(),
+        )?;
+        d.set_item(
+            "heavy_neutrino_to_planck_ratio",
+            self.heavy_neutrino_to_planck_ratio.to_f64(),
+        )?;
+        d.set_item("eta_b", self.eta_b.to_f64())?;
+        Ok(d)
+    }
+}
+
+#[pymethods]
+impl FieldSimulation {
+    pub fn to_dict<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyDict>> {
+        let d = PyDict::new_bound(py);
+        d.set_item("field_name", self.field_name.clone())?;
+        d.set_item("particle_count", self.particle_count)?;
+        d.set_item("cpu_cycle_weight", self.cpu_cycle_weight.to_f64())?;
+        d.set_item("operation_count", self.operation_count)?;
+        d.set_item("memory_bytes", self.memory_bytes)?;
+        d.set_item("elapsed_s", self.elapsed_s.to_f64())?;
+        d.set_item("peak_traced_bytes", self.peak_traced_bytes)?;
+        d.set_item("checksum", self.checksum.to_f64())?;
+        Ok(d)
+    }
+}
+
+#[pymethods]
+impl BenchmarkDelta {
+    pub fn to_dict<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyDict>> {
+        let d = PyDict::new_bound(py);
+        d.set_item("standard", self.standard.to_dict(py)?)?;
+        d.set_item("optimized", self.optimized.to_dict(py)?)?;
+        d.set_item("cpu_cycle_delta", self.cpu_cycle_delta.to_f64())?;
+        d.set_item("operation_delta", self.operation_delta)?;
+        d.set_item("memory_delta_bytes", self.memory_delta_bytes)?;
+        d.set_item("elapsed_delta_s", self.elapsed_delta_s.to_f64())?;
+        d.set_item(
+            "cpu_cycle_reduction_fraction",
+            self.cpu_cycle_reduction_fraction.to_f64(),
+        )?;
+        d.set_item(
+            "operation_reduction_fraction",
+            self.operation_reduction_fraction.to_f64(),
+        )?;
+        d.set_item(
+            "memory_reduction_fraction",
+            self.memory_reduction_fraction.to_f64(),
+        )?;
+        d.set_item("stress_energy_preserved", self.stress_energy_preserved)?;
+        Ok(d)
+    }
 }
 
 #[derive(Debug, Clone)]
