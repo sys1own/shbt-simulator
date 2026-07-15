@@ -273,8 +273,22 @@ cargo build --release
 cp target/release/libshbt_simulator.so target/release/shbt_simulator.so
 PYTHONPATH=target/release python3 examples/run_audit.py
 
-# Python reference with optional Rust fallback
-PYTHONPATH=target/release python3 shbt_core.py
+# Run from a configuration file (YAML or JSON)
+PYTHONPATH=target/release python3 shbt_simulate.py --config config.default.yaml
+
+# Override a config value from the command line
+PYTHONPATH=target/release python3 shbt_simulate.py \
+  --config config.default.yaml --mode baryogenesis --particles 1024 --seed 42
+
+# Reproducible history with a fixed seed
+PYTHONPATH=target/release python3 shbt_simulate.py --mode history --seed 123
 ```
 
 Expected outputs: `branch = (26, 8, 312)`, `framing_defect = 0.0`, `modular_invariant = True`, `zero_energy_locked = True`, `projection_dimension_26_to_4 = True`, `eta_b = 6.449923359416e-10`, `stress_energy_preserved = True`, 9 metric slices, 9 crystallized history entries.
+
+Result directories now include:
+- `result.json` (or `result.h5` / `result_*.csv` depending on `export_formats`)
+- `result.log` (plain-text reproducibility log with version, git commit, config summary)
+- `result_run_info.json` (machine-readable version of the same metadata)
+
+Set `seed` in the config or via `--seed` to make Causal Point collapse selections reproducible.

@@ -3430,7 +3430,7 @@ pub struct ShbtSimulator {
 impl ShbtSimulator {
     #[new]
     fn new() -> Self {
-        Self::with_config((26, 8, 312), 0.125, 3.0, 9, 512)
+        Self::with_config((26, 8, 312), 0.125, 3.0, 9, 512, 0)
     }
 
     #[staticmethod]
@@ -3440,6 +3440,7 @@ impl ShbtSimulator {
         redshift_max: f64,
         redshift_samples: usize,
         particles: usize,
+        seed: u64,
     ) -> Self {
         let (lepton_level, quark_level, parent_level) = branch;
         let boundary = StaticBoundary::new_with_branch(lepton_level, quark_level, parent_level);
@@ -3456,6 +3457,7 @@ impl ShbtSimulator {
             xi,
             Float::with_val(EVAL_PREC, redshift_max),
             redshift_samples,
+            seed,
         );
         let optimizer = BaryogenesisOptimizer::new(boundary.clone());
         Self {
@@ -3511,6 +3513,7 @@ impl ShbtSimulator {
             xi,
             Float::with_val(EVAL_PREC, z_max),
             samples,
+            self.causal_point.seed,
         );
         let slices = cp.projection.project_entropy_cascade();
         let cone = cp.build_past_light_cone();

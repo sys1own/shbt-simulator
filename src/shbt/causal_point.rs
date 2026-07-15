@@ -196,6 +196,7 @@ pub struct CausalPoint {
     pub xi: [Float; 3],
     pub redshift_max: Float,
     pub redshift_samples: usize,
+    pub seed: u64,
     pub global_horizon_radius_m: Float,
     pub observer_radius_m: Float,
     pub local_horizon_radius_m: Float,
@@ -296,6 +297,7 @@ impl CausalPoint {
         xi: [Float; 3],
         redshift_max: Float,
         redshift_samples: usize,
+        seed: u64,
     ) -> Self {
         let projection = HolographicProjection::new(boundary.clone());
 
@@ -393,6 +395,7 @@ impl CausalPoint {
             xi,
             redshift_max,
             redshift_samples,
+            seed,
             global_horizon_radius_m,
             observer_radius_m,
             local_horizon_radius_m,
@@ -424,6 +427,7 @@ impl CausalPoint {
             xi,
             redshift_max,
             redshift_samples,
+            0,
         )
     }
 
@@ -632,8 +636,9 @@ impl CausalPoint {
             let (i, j) = sample.coordinate;
             let boundary_address = format!("C[{},{}]", i, j);
             let payload = format!(
-                "{}|{}|{}|{}|{}",
-                observable_name, boundary_address, f_H_str, local_available_str, ensemble_size
+                "{}|{}|{}|{}|{}|{}",
+                observable_name, boundary_address, f_H_str, local_available_str, ensemble_size,
+                self.seed
             );
             let collapse_index = fnv1a_hash(&payload, ensemble_size);
             let selected = packets[collapse_index].clone();
