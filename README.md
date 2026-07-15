@@ -176,28 +176,6 @@ These are reused by the new SHBT modules where appropriate.
 
 ---
 
-## 📝 Paper Update Workflow
-
-If you modify the simulator (e.g., change a constant or algorithm), you **must** update the paper accordingly. The `paper_references.md` file lists every paper reference that maps to a specific simulator method or output. Use it as a checklist:
-
-1. Make your code changes.
-2. Update the affected sections of `main.tex`.
-3. Re‑compile the PDF (the repository includes a LaTeX build script or you can use your favourite editor).
-4. Run the audit again to verify that the new numbers match the revised paper.
-
----
-
-## 🤝 Contributing
-
-Contributions are welcome! Please follow these guidelines:
-
-- All code changes must include corresponding updates to the paper (if they affect the theory or numerical results).
-- Ensure that `cargo test` and `python examples/run_audit.py` pass.
-- Update `paper_references.md` if you add or rename a public method or audit field.
-- For significant changes, open an issue first to discuss the design.
-
----
-
 ## 📜 License
 
 This project is licensed under the MIT License – see the [LICENSE](LICENSE) file for details.
@@ -216,7 +194,3 @@ If you use this repository or the SHBT framework in your research, please cite t
   year    = {2026},
   note    = {Available at \url{https://github.com/sys1own/shbt-simulator}}
 }
-```
-**Happy simulating!**  
-*The code is the proof; the paper is the explanation.*
-```
