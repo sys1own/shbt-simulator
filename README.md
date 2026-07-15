@@ -219,6 +219,7 @@ observer_radius_fraction: 0.125
 redshift_max: 3.0
 redshift_samples: 9
 particles: 512
+seed: 0
 output_dir: ./simulation_results
 export_formats: [json, csv]
 plot: true
@@ -234,12 +235,14 @@ python shbt_simulate.py --config my_config.yaml
 CLI flags override config file values, so you can iterate quickly:
 
 ```bash
-python shbt_simulate.py --config my_config.yaml --mode baryogenesis --particles 1024
+python shbt_simulate.py --config my_config.yaml --mode baryogenesis --particles 1024 --seed 42
 ```
 
 A default configuration is provided in [`config.default.yaml`](config.default.yaml). The config is validated against a schema; if `jsonschema` is installed it is used, otherwise a manual validator runs.
 
-Results are written to `output_dir/<timestamp>/result.<fmt>` so repeated runs are organised automatically.
+Results are written to `output_dir/<timestamp>/result.<fmt>` so repeated runs are organised automatically. Each run directory also contains a reproducibility log (`result.log`) and `result_run_info.json` with the simulator version, git commit/branch (when available), config, and summary.
+
+Use `--seed` or the `seed` config key to make Causal Point collapse selections reproducible.
 
 ### Jupyter / Colab
 

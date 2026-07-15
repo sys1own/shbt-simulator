@@ -11,6 +11,7 @@ observer_radius_fraction: 0.125
 redshift_max: 3.0
 redshift_samples: 9
 particles: 512
+seed: 0
 
 # Where results are saved. A timestamped subdirectory is created under this path.
 output_dir: ./simulation_results

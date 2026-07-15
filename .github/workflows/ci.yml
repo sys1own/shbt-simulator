@@ -79,5 +79,19 @@ jobs:
           export_formats: [json, csv]
           plot: true
           EOF
-          PYTHONPATH=target/release python3 shbt_simulate.py --config /tmp/my_config.yaml --redshift-samples 7
+          PYTHONPATH=target/release python3 shbt_simulate.py --config /tmp/my_config.yaml --redshift-samples 7 --seed 123
           test -d /tmp/config_test2
+          test -f /tmp/config_test2/*/result.log
+          test -f /tmp/config_test2/*/result_run_info.json
+
+      - name: Test seed reproducibility
+        run: |
+          cp target/release/libshbt_simulator.so target/release/shbt_simulator.so
+          PYTHONPATH=target/release python3 shbt_simulate.py --mode history --seed 123 --redshift-samples 5 --output /tmp/seed1.json
+          PYTHONPATH=target/release python3 shbt_simulate.py --mode history --seed 123 --redshift-samples 5 --output /tmp/seed2.json
+          python3 - <<'PY'
+          import json
+          c1=[e['selected_coordinate'] for e in json.load(open('/tmp/seed1.json'))['history']]
+          c2=[e['selected_coordinate'] for e in json.load(open('/tmp/seed2.json'))['history']]
+          assert c1==c2, 'seed did not produce reproducible history'
+          PY

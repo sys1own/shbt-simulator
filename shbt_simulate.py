@@ -26,7 +26,10 @@ import itertools
 import json
 import logging
 import os
+import re
+import subprocess
 import sys
+import time
 from pathlib import Path
 from typing import Any, Iterable
 
@@ -75,6 +78,38 @@ def _ensure_rust() -> None:
         ) from _IMPORT_ERROR
 
 
+def get_version() -> str:
+    """Return the simulator version from Cargo.toml, or 'unknown'."""
+    cargo_toml = Path(__file__).with_name("Cargo.toml")
+    if not cargo_toml.exists():
+        return "unknown"
+    text = cargo_toml.read_text(encoding="utf-8")
+    m = re.search(r'^version\s*=\s*"([^"]+)"', text, re.MULTILINE)
+    return m.group(1) if m else "unknown"
+
+
+def get_git_info() -> dict[str, str] | None:
+    """Return git commit hash and branch if available."""
+    repo_root = Path(__file__).resolve().parent
+    try:
+        commit = subprocess.check_output(
+            ["git", "-C", str(repo_root), "rev-parse", "--short", "HEAD"],
+            stderr=subprocess.DEVNULL,
+            text=True,
+        ).strip()
+        branch = subprocess.check_output(
+            ["git", "-C", str(repo_root), "rev-parse", "--abbrev-ref", "HEAD"],
+            stderr=subprocess.DEVNULL,
+            text=True,
+        ).strip()
+        return {"commit": commit, "branch": branch}
+    except Exception:
+        return None
+
+
+__version__ = get_version()
+
+
 # ---------------------------------------------------------------------------
 # Configuration schema and defaults
 # ---------------------------------------------------------------------------
@@ -86,6 +121,7 @@ DEFAULT_CONFIG: dict[str, Any] = {
     "redshift_max": 3.0,
     "redshift_samples": 9,
     "particles": 512,
+    "seed": 0,
     "output_dir": "./simulation_results",
     "output_name": "result",
     "export_formats": ["json"],
@@ -108,6 +144,7 @@ SHBT_CONFIG_SCHEMA: dict[str, Any] = {
         "redshift_max": {"type": "number"},
         "redshift_samples": {"type": "integer"},
         "particles": {"type": "integer"},
+        "seed": {"type": "integer"},
         "output_dir": {"type": "string"},
         "output_name": {"type": "string"},
         "export_formats": {
@@ -166,7 +203,7 @@ def _validate_config(config: dict[str, Any]) -> None:
         for key in ("observer_radius_fraction", "redshift_max"):
             if key in config and not isinstance(config[key], (int, float)):
                 raise ValueError(f"{key} must be a number")
-        for key in ("redshift_samples", "particles"):
+        for key in ("redshift_samples", "particles", "seed"):
             if key in config and not isinstance(config[key], int):
                 raise ValueError(f"{key} must be an integer")
         if "export_formats" in config:
@@ -204,6 +241,8 @@ def _merge_with_cli(args: argparse.Namespace) -> dict[str, Any]:
         config["redshift_samples"] = args.redshift_samples
     if args.particles != DEFAULT_CONFIG["particles"]:
         config["particles"] = args.particles
+    if args.seed != DEFAULT_CONFIG["seed"]:
+        config["seed"] = args.seed
     if args.format:
         config["export_formats"] = [args.format]
     if args.verbose:
@@ -494,6 +533,7 @@ def simulate(config: dict[str, Any]) -> dict[str, Any]:
       - redshift_max: float, default ``3.0``
       - redshift_samples: int, default ``9``
       - particles: int, default ``512``
+      - seed: int, default ``0``
     """
     _ensure_rust()
     assert _rs is not None
@@ -507,6 +547,7 @@ def simulate(config: dict[str, Any]) -> dict[str, Any]:
     redshift_max = float(config.get("redshift_max", 3.0))
     redshift_samples = int(config.get("redshift_samples", 9))
     particles = int(config.get("particles", 512))
+    seed = int(config.get("seed", 0))
 
     sim = _rs.ShbtSimulator.with_config(
         branch,
@@ -514,6 +555,7 @@ def simulate(config: dict[str, Any]) -> dict[str, Any]:
         redshift_max,
         redshift_samples,
         particles,
+        seed,
     )
 
     result: dict[str, Any] = {
@@ -524,6 +566,7 @@ def simulate(config: dict[str, Any]) -> dict[str, Any]:
             "redshift_max": redshift_max,
             "redshift_samples": redshift_samples,
             "particles": particles,
+            "seed": seed,
         },
     }
 
@@ -550,7 +593,17 @@ def simulate(config: dict[str, Any]) -> dict[str, Any]:
     if mode not in ("audit", "cosmology", "baryogenesis", "history", "all"):
         raise ValueError(f"unknown simulation mode: {mode}")
 
+    _add_repro_metadata(result)
     return result
+
+
+def _add_repro_metadata(result: dict[str, Any]) -> None:
+    """Attach version, git, and timestamp metadata to a simulation result."""
+    result.setdefault("metadata", {}).update({
+        "version": get_version(),
+        "git_info": get_git_info(),
+        "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+    })
 
 
 def run_sweep(sweep_config: dict[str, Any]) -> dict[str, Any]:
@@ -565,7 +618,9 @@ def run_sweep(sweep_config: dict[str, Any]) -> dict[str, Any]:
     for i, cfg in enumerate(configs, 1):
         logging.info("Sweep run %d/%d with config %s", i, total, cfg)
         results.append(simulate(cfg))
-    return {"sweep_configs": configs, "sweep_results": results}
+    sweep_result: dict[str, Any] = {"sweep_configs": configs, "sweep_results": results}
+    _add_repro_metadata(sweep_result)
+    return sweep_result
 
 
 def _summarise(result: dict[str, Any]) -> dict[str, Any]:
@@ -660,6 +715,12 @@ def _build_arg_parser() -> argparse.ArgumentParser:
         help="particle count for the baryogenesis benchmark (default: 512)",
     )
     parser.add_argument(
+        "--seed",
+        type=int,
+        default=DEFAULT_CONFIG["seed"],
+        help="random seed for causal-point collapse selection (default: 0)",
+    )
+    parser.add_argument(
         "--output",
         "-o",
         type=str,
@@ -713,6 +774,32 @@ def _run_from_config(config: dict[str, Any]) -> dict[str, Any]:
     return simulate(config)
 
 
+def _write_run_info(result: dict[str, Any], output_dir: Path, basename: str) -> Path:
+    """Write a reproducibility metadata file (JSON) and a plain-text log."""
+    info = {
+        "version": get_version(),
+        "git_info": get_git_info(),
+        "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+        "config": result.get("config"),
+        "summary": _summarise(result),
+    }
+    info_path = output_dir / f"{basename}_run_info.json"
+    with open(info_path, "w", encoding="utf-8") as f:
+        json.dump(info, f, indent=2, sort_keys=True)
+
+    log_path = output_dir / f"{basename}.log"
+    lines = [
+        f"SHBT simulation run log",
+        f"Version: {info['version']}",
+        f"Timestamp: {info['timestamp']}",
+        f"Git: {info['git_info']}",
+        f"Config: {json.dumps(info['config'], sort_keys=True)}",
+        f"Summary: {json.dumps(info['summary'], sort_keys=True)}",
+    ]
+    log_path.write_text("\n".join(lines), encoding="utf-8")
+    return info_path
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = _build_arg_parser()
     args = parser.parse_args(argv)
@@ -721,9 +808,6 @@ def main(argv: list[str] | None = None) -> int:
     if args.sweep:
         sweep_config = json.loads(Path(args.sweep).read_text(encoding="utf-8"))
         result = run_sweep(sweep_config)
-        if args.output or args.output_dir or args.config:
-            # Still merge other options for output handling
-            pass
         export_formats = [args.format] if args.format else ["json"]
         output_path = args.output or f"sweep_{_timestamp_dir()}.json"
         paths = export_result(result, output_path, fmt=export_formats[0])
@@ -742,7 +826,10 @@ def main(argv: list[str] | None = None) -> int:
         logging.basicConfig(level=logging.INFO)
 
     logging.info("Starting SHBT simulation with config: %s", config)
+    start = time.time()
     result = simulate(config)
+    duration = time.time() - start
+    result["metadata"]["duration_s"] = duration
 
     # Determine where to write results
     explicit_output = args.output
@@ -753,23 +840,29 @@ def main(argv: list[str] | None = None) -> int:
         export_formats = [args.format]
 
     written: list[Path] = []
+    out_dir: Path
     if explicit_output:
-        # CLI --output is an explicit file path; infer format from extension unless --format given
+        explicit_path = Path(explicit_output)
+        out_dir = explicit_path.parent or Path(".")
+        output_name = explicit_path.stem
         fmt = args.format or _infer_format_from_path(explicit_output)
         written.extend(export_result(result, explicit_output, fmt=fmt))
     else:
-        ts_dir = Path(output_dir) / _timestamp_dir()
-        ts_dir.mkdir(parents=True, exist_ok=True)
-        written.extend(export_results(result, ts_dir, basename=output_name, formats=export_formats))
+        out_dir = Path(output_dir) / _timestamp_dir()
+        out_dir.mkdir(parents=True, exist_ok=True)
+        written.extend(export_results(result, out_dir, basename=output_name, formats=export_formats))
 
     for p in written:
         print(f"Wrote SHBT output to {p}")
+
+    _write_run_info(result, out_dir, output_name)
+    print(f"Wrote run log to {out_dir / (output_name + '.log')}")
 
     if config.get("plot") or args.plot:
         if explicit_output:
             prefix = Path(explicit_output).with_name(Path(explicit_output).stem)
         else:
-            prefix = ts_dir / output_name
+            prefix = out_dir / output_name
         plot_paths = _plot_result(result, prefix, sweep=False)
         for p in plot_paths:
             print(f"Wrote plot to {p}")
