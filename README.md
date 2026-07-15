@@ -53,6 +53,7 @@ The paper and simulator are developed **in lockstep**:
 │   ├── run_audit.py              # Thin wrapper around shbt_simulate.py --mode audit
 │   └── shbt_notebook.ipynb       # Jupyter / Colab example
 ├── shbt_simulate.py             # Customisable CLI/API for research runs
+├── config.default.yaml          # Default simulation configuration template
 ├── requirements.txt             # Optional Python dependencies (plots/HDF5/pandas)
 ├── tests/
 │   └── test_shbt.rs             # Unit tests for all SHBT components
@@ -205,6 +206,40 @@ python shbt_simulate.py --sweep sweep.json --output sweep_result.json
 ```
 
 The simulator evaluates the Cartesian product of all parameter lists. For sweep runs you can also add `--plot` to visualise `η_b` across configurations.
+
+### Configuration files
+
+Simulation setups can be stored in YAML or JSON files and reused:
+
+```yaml
+# my_config.yaml
+mode: all
+branch: [26, 8, 312]
+observer_radius_fraction: 0.125
+redshift_max: 3.0
+redshift_samples: 9
+particles: 512
+output_dir: ./simulation_results
+export_formats: [json, csv]
+plot: true
+verbose: false
+```
+
+Run it with:
+
+```bash
+python shbt_simulate.py --config my_config.yaml
+```
+
+CLI flags override config file values, so you can iterate quickly:
+
+```bash
+python shbt_simulate.py --config my_config.yaml --mode baryogenesis --particles 1024
+```
+
+A default configuration is provided in [`config.default.yaml`](config.default.yaml). The config is validated against a schema; if `jsonschema` is installed it is used, otherwise a manual validator runs.
+
+Results are written to `output_dir/<timestamp>/result.<fmt>` so repeated runs are organised automatically.
 
 ### Jupyter / Colab
 

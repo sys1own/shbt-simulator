@@ -1,10 +1,12 @@
 """SHBT research simulation CLI and programmable API.
 
 This module wraps the compiled `shbt_simulator` Rust extension and adds
-data export (JSON/CSV/HDF5), optional plotting, and parameter sweeps.
+data export (JSON/CSV/HDF5), optional plotting, parameter sweeps, and
+configuration-file support (YAML or JSON).
 
 Example CLI::
 
+    python shbt_simulate.py --config config.default.yaml
     python shbt_simulate.py --mode all --output result.json
     python shbt_simulate.py --mode cosmology --format csv --output slices
     python shbt_simulate.py --sweep sweep.json --output sweep.json
@@ -19,6 +21,7 @@ from __future__ import annotations
 
 import argparse
 import csv
+import datetime
 import itertools
 import json
 import logging
@@ -50,10 +53,16 @@ except Exception:  # pragma: no cover
     _HAS_H5 = False
 
 try:
-    import pandas as _pd  # type: ignore[import]
-    _HAS_PANDAS = True
+    import yaml  # type: ignore[import]
+    _HAS_YAML = True
 except Exception:  # pragma: no cover
-    _HAS_PANDAS = False
+    _HAS_YAML = False
+
+try:
+    import jsonschema  # type: ignore[import]
+    _HAS_JSONSCHEMA = True
+except Exception:  # pragma: no cover
+    _HAS_JSONSCHEMA = False
 
 
 def _ensure_rust() -> None:
@@ -65,6 +74,149 @@ def _ensure_rust() -> None:
             "to target/release/shbt_simulator.so)."
         ) from _IMPORT_ERROR
 
+
+# ---------------------------------------------------------------------------
+# Configuration schema and defaults
+# ---------------------------------------------------------------------------
+
+DEFAULT_CONFIG: dict[str, Any] = {
+    "mode": "all",
+    "branch": (26, 8, 312),
+    "observer_radius_fraction": 0.125,
+    "redshift_max": 3.0,
+    "redshift_samples": 9,
+    "particles": 512,
+    "output_dir": "./simulation_results",
+    "output_name": "result",
+    "export_formats": ["json"],
+    "plot": False,
+    "verbose": False,
+}
+
+SHBT_CONFIG_SCHEMA: dict[str, Any] = {
+    "type": "object",
+    "additionalProperties": False,
+    "properties": {
+        "mode": {"type": "string", "enum": ["audit", "cosmology", "baryogenesis", "history", "all"]},
+        "branch": {
+            "type": "array",
+            "minItems": 3,
+            "maxItems": 3,
+            "items": {"type": "integer"},
+        },
+        "observer_radius_fraction": {"type": "number"},
+        "redshift_max": {"type": "number"},
+        "redshift_samples": {"type": "integer"},
+        "particles": {"type": "integer"},
+        "output_dir": {"type": "string"},
+        "output_name": {"type": "string"},
+        "export_formats": {
+            "type": "array",
+            "items": {"type": "string", "enum": ["json", "csv", "hdf5", "h5"]},
+        },
+        "plot": {"type": "boolean"},
+        "verbose": {"type": "boolean"},
+    },
+}
+
+
+def _load_config_file(path: str | Path) -> dict[str, Any]:
+    """Load a YAML or JSON configuration file."""
+    path = Path(path)
+    text = path.read_text(encoding="utf-8")
+    suffix = path.suffix.lower()
+    if suffix in (".yaml", ".yml"):
+        if not _HAS_YAML:
+            raise RuntimeError(
+                "YAML config files require PyYAML. Install it with `pip install pyyaml` "
+                "or use a JSON config file instead."
+            )
+        data = yaml.safe_load(text)
+    elif suffix == ".json":
+        data = json.loads(text)
+    else:
+        # Try YAML first, then JSON
+        if _HAS_YAML:
+            try:
+                data = yaml.safe_load(text)
+            except Exception:
+                data = json.loads(text)
+        else:
+            data = json.loads(text)
+    if not isinstance(data, dict):
+        raise ValueError(f"configuration file must contain a top-level object, got {type(data)}")
+    return data
+
+
+def _validate_config(config: dict[str, Any]) -> None:
+    """Validate a loaded configuration dictionary."""
+    if _HAS_JSONSCHEMA:
+        jsonschema.validate(config, SHBT_CONFIG_SCHEMA)
+    else:
+        allowed = set(SHBT_CONFIG_SCHEMA["properties"].keys())
+        for key in config:
+            if key not in allowed:
+                raise ValueError(f"unknown configuration key: {key!r}")
+        if "mode" in config and config["mode"] not in ("audit", "cosmology", "baryogenesis", "history", "all"):
+            raise ValueError(f"invalid mode: {config['mode']!r}")
+        if "branch" in config:
+            b = config["branch"]
+            if not isinstance(b, (list, tuple)) or len(b) != 3 or not all(isinstance(x, int) for x in b):
+                raise ValueError(f"branch must be a list of three integers, got {b!r}")
+        for key in ("observer_radius_fraction", "redshift_max"):
+            if key in config and not isinstance(config[key], (int, float)):
+                raise ValueError(f"{key} must be a number")
+        for key in ("redshift_samples", "particles"):
+            if key in config and not isinstance(config[key], int):
+                raise ValueError(f"{key} must be an integer")
+        if "export_formats" in config:
+            fmts = config["export_formats"]
+            if not isinstance(fmts, list):
+                raise ValueError("export_formats must be a list")
+            for f in fmts:
+                if f not in ("json", "csv", "hdf5", "h5"):
+                    raise ValueError(f"unknown export format: {f!r}")
+
+
+def _merge_with_cli(args: argparse.Namespace) -> dict[str, Any]:
+    """Build the final runtime config from defaults, file, and CLI overrides."""
+    config: dict[str, Any] = dict(DEFAULT_CONFIG)
+
+    if args.config:
+        file_config = _load_config_file(args.config)
+        _validate_config(file_config)
+        config.update(file_config)
+        # Normalise branch to tuple for downstream use
+        if "branch" in config:
+            config["branch"] = tuple(int(x) for x in config["branch"])
+
+    # CLI overrides take precedence. Booleans and sweep are handled specially.
+    if args.mode != "all":
+        config["mode"] = args.mode
+    branch_cli = tuple(int(x) for x in args.branch) if args.branch else None
+    if branch_cli and branch_cli != DEFAULT_CONFIG["branch"]:
+        config["branch"] = branch_cli
+    if args.observer_radius_fraction != DEFAULT_CONFIG["observer_radius_fraction"]:
+        config["observer_radius_fraction"] = args.observer_radius_fraction
+    if args.redshift_max != DEFAULT_CONFIG["redshift_max"]:
+        config["redshift_max"] = args.redshift_max
+    if args.redshift_samples != DEFAULT_CONFIG["redshift_samples"]:
+        config["redshift_samples"] = args.redshift_samples
+    if args.particles != DEFAULT_CONFIG["particles"]:
+        config["particles"] = args.particles
+    if args.format:
+        config["export_formats"] = [args.format]
+    if args.verbose:
+        config["verbose"] = True
+    if args.plot:
+        config["plot"] = True
+
+    return config
+
+
+# ---------------------------------------------------------------------------
+# Export helpers
+# ---------------------------------------------------------------------------
 
 def _flatten_dict(prefix: str, obj: Any) -> dict[str, Any]:
     """Flatten a nested dict/list into dotted scalar columns."""
@@ -161,8 +313,8 @@ def export_result(
 
     Supported formats:
       - ``json``: single JSON file with the full result tree.
-      - ``csv``: two CSV files, ``{output_path}_metric_slices.csv`` and
-        ``{output_path}_history.csv``.
+      - ``csv``: two CSV files, ``{prefix}_metric_slices.csv`` and
+        ``{prefix}_history.csv``.
       - ``hdf5``: single HDF5 file with groups ``/audit``, ``/cosmology``,
         ``/history``, and ``/baryogenesis``.
     """
@@ -204,6 +356,38 @@ def export_result(
 
     raise ValueError(f"Unknown export format: {fmt!r}")
 
+
+def export_results(
+    result: dict[str, Any],
+    output_dir: str | Path,
+    basename: str = "result",
+    formats: list[str] | None = None,
+) -> list[Path]:
+    """Export a result into *output_dir* in all requested formats.
+
+    Returns the list of written paths.
+    """
+    output_dir = Path(output_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
+    formats = formats or ["json"]
+    paths: list[Path] = []
+    for fmt in formats:
+        fmt = fmt.lower()
+        if fmt == "json":
+            p = output_dir / f"{basename}.json"
+        elif fmt == "csv":
+            p = output_dir / basename  # export_result adds suffixes
+        elif fmt in ("hdf5", "h5"):
+            p = output_dir / f"{basename}.h5"
+        else:
+            raise ValueError(f"Unknown export format: {fmt!r}")
+        paths.extend(export_result(result, p, fmt=fmt))
+    return paths
+
+
+# ---------------------------------------------------------------------------
+# Plotting
+# ---------------------------------------------------------------------------
 
 def _sweep_combinations(sweep_config: dict[str, Any]) -> Iterable[dict[str, Any]]:
     """Yield dicts for every Cartesian combination of parameter lists."""
@@ -268,12 +452,13 @@ def _plot_result(result: dict[str, Any], prefix: Path, *, sweep: bool = False) -
         eta_values = [r.get("audit", {}).get("eta_b") or r.get("baryogenesis", {}).get("identity", {}).get("eta_b") for r in results]
         # Try to find a numeric varying parameter for the x-axis
         varying_numeric = None
-        for key in configs[0].keys() if configs else []:
-            vals = [_numeric_or_none(c.get(key)) for c in configs]
-            if all(v is not None for v in vals):
-                varying_numeric = key
-                xvals = vals
-                break
+        if configs:
+            for key in configs[0].keys():
+                vals = [_numeric_or_none(c.get(key)) for c in configs]
+                if all(v is not None for v in vals):
+                    varying_numeric = key
+                    xvals = vals
+                    break
         fig, ax = _plt.subplots(figsize=(7, 4))
         if varying_numeric:
             ax.plot(xvals, eta_values, marker="o")
@@ -294,6 +479,10 @@ def _plot_result(result: dict[str, Any], prefix: Path, *, sweep: bool = False) -
 
     return files
 
+
+# ---------------------------------------------------------------------------
+# Simulation core
+# ---------------------------------------------------------------------------
 
 def simulate(config: dict[str, Any]) -> dict[str, Any]:
     """Run an SHBT simulation according to *config* and return a JSON-serialisable dict.
@@ -410,16 +599,27 @@ def _summarise(result: dict[str, Any]) -> dict[str, Any]:
     return summary
 
 
+# ---------------------------------------------------------------------------
+# CLI
+# ---------------------------------------------------------------------------
+
 def _build_arg_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="shbt_simulate.py",
         description="Run custom SHBT simulations using the Rust/PyO3 simulator.",
     )
     parser.add_argument(
+        "--config",
+        "-c",
+        type=str,
+        default=None,
+        help="path to a YAML or JSON configuration file (values can be overridden by CLI flags)",
+    )
+    parser.add_argument(
         "--mode",
         "-m",
         choices=["audit", "cosmology", "baryogenesis", "history", "all"],
-        default="all",
+        default=DEFAULT_CONFIG["mode"],
         help="simulation mode (default: all)",
     )
     parser.add_argument(
@@ -427,7 +627,7 @@ def _build_arg_parser() -> argparse.ArgumentParser:
         "-b",
         nargs=3,
         type=int,
-        default=(26, 8, 312),
+        default=list(DEFAULT_CONFIG["branch"]),
         metavar=("K_L", "K_Q", "K"),
         help="boundary branch as three integers (default: 26 8 312)",
     )
@@ -435,28 +635,28 @@ def _build_arg_parser() -> argparse.ArgumentParser:
         "--observer-radius-fraction",
         "-r",
         type=float,
-        default=0.125,
+        default=DEFAULT_CONFIG["observer_radius_fraction"],
         help="observer radius as a fraction of the global horizon (default: 0.125)",
     )
     parser.add_argument(
         "--redshift-max",
         "-z",
         type=float,
-        default=3.0,
+        default=DEFAULT_CONFIG["redshift_max"],
         help="maximum redshift for the past light cone (default: 3.0)",
     )
     parser.add_argument(
         "--redshift-samples",
         "-n",
         type=int,
-        default=9,
+        default=DEFAULT_CONFIG["redshift_samples"],
         help="number of redshift / causal samples (default: 9)",
     )
     parser.add_argument(
         "--particles",
         "-p",
         type=int,
-        default=512,
+        default=DEFAULT_CONFIG["particles"],
         help="particle count for the baryogenesis benchmark (default: 512)",
     )
     parser.add_argument(
@@ -464,14 +664,20 @@ def _build_arg_parser() -> argparse.ArgumentParser:
         "-o",
         type=str,
         default=None,
-        help="optional path to write output (extension selects format if --format is omitted)",
+        help="optional explicit output path; overrides output_dir from config",
+    )
+    parser.add_argument(
+        "--output-dir",
+        type=str,
+        default=None,
+        help="directory for timestamped results (overrides config output_dir)",
     )
     parser.add_argument(
         "--format",
         "-f",
         choices=["json", "csv", "hdf5", "h5"],
         default=None,
-        help="output format (default inferred from --output, otherwise json)",
+        help="single output format; overrides export_formats from config",
     )
     parser.add_argument(
         "--sweep",
@@ -494,68 +700,90 @@ def _build_arg_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def _infer_format(output_path: str | None, explicit: str | None) -> str:
-    if explicit:
-        return explicit.lower()
-    if output_path:
-        ext = Path(output_path).suffix.lower()
-        if ext in (".csv",):
-            return "csv"
-        if ext in (".h5", ".hdf5"):
-            return "hdf5"
-        return "json"
-    return "json"
+def _timestamp_dir() -> str:
+    return datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
 
 
-def _plot_prefix(output_path: str | None) -> Path:
-    if output_path:
-        p = Path(output_path)
-        return p.with_name(p.stem)
-    return Path("shbt")
+def _run_from_config(config: dict[str, Any]) -> dict[str, Any]:
+    """Run simulate or a sweep based on the final config."""
+    if "sweep" in config and config["sweep"]:
+        sweep_path = config["sweep"]
+        sweep_config = json.loads(Path(sweep_path).read_text(encoding="utf-8"))
+        return run_sweep(sweep_config)
+    return simulate(config)
 
 
 def main(argv: list[str] | None = None) -> int:
     parser = _build_arg_parser()
     args = parser.parse_args(argv)
 
-    if args.verbose:
-        logging.basicConfig(level=logging.INFO)
-
-    fmt = _infer_format(args.output, args.format)
-
+    # Sweep mode is triggered by the dedicated CLI flag for now.
     if args.sweep:
         sweep_config = json.loads(Path(args.sweep).read_text(encoding="utf-8"))
-        logging.info("Running parameter sweep from %s", args.sweep)
         result = run_sweep(sweep_config)
-    else:
-        config = {
-            "mode": args.mode,
-            "branch": tuple(args.branch),
-            "observer_radius_fraction": args.observer_radius_fraction,
-            "redshift_max": args.redshift_max,
-            "redshift_samples": args.redshift_samples,
-            "particles": args.particles,
-        }
-        logging.info("Starting SHBT simulation: mode=%s, config=%s", args.mode, config)
-        result = simulate(config)
-
-    if args.output:
-        paths = export_result(result, args.output, fmt=fmt)
+        if args.output or args.output_dir or args.config:
+            # Still merge other options for output handling
+            pass
+        export_formats = [args.format] if args.format else ["json"]
+        output_path = args.output or f"sweep_{_timestamp_dir()}.json"
+        paths = export_result(result, output_path, fmt=export_formats[0])
         for p in paths:
-            print(f"Wrote SHBT output to {p}")
+            print(f"Wrote SHBT sweep output to {p}")
         if args.plot:
-            prefix = _plot_prefix(args.output)
-            plot_paths = _plot_result(result, prefix, sweep=args.sweep is not None)
+            prefix = Path(output_path).with_name(Path(output_path).stem)
+            plot_paths = _plot_result(result, prefix, sweep=True)
             for p in plot_paths:
                 print(f"Wrote plot to {p}")
+        return 0
+
+    config = _merge_with_cli(args)
+
+    if config.get("verbose") or args.verbose:
+        logging.basicConfig(level=logging.INFO)
+
+    logging.info("Starting SHBT simulation with config: %s", config)
+    result = simulate(config)
+
+    # Determine where to write results
+    explicit_output = args.output
+    output_dir = args.output_dir or config.get("output_dir", "./simulation_results")
+    output_name = config.get("output_name", "result")
+    export_formats = config.get("export_formats", ["json"])
+    if args.format:
+        export_formats = [args.format]
+
+    written: list[Path] = []
+    if explicit_output:
+        # CLI --output is an explicit file path; infer format from extension unless --format given
+        fmt = args.format or _infer_format_from_path(explicit_output)
+        written.extend(export_result(result, explicit_output, fmt=fmt))
     else:
-        if args.sweep:
-            summary = {"sweep_runs": len(result["sweep_results"])}
+        ts_dir = Path(output_dir) / _timestamp_dir()
+        ts_dir.mkdir(parents=True, exist_ok=True)
+        written.extend(export_results(result, ts_dir, basename=output_name, formats=export_formats))
+
+    for p in written:
+        print(f"Wrote SHBT output to {p}")
+
+    if config.get("plot") or args.plot:
+        if explicit_output:
+            prefix = Path(explicit_output).with_name(Path(explicit_output).stem)
         else:
-            summary = _summarise(result)
-        print(json.dumps(summary, indent=2, sort_keys=True))
+            prefix = ts_dir / output_name
+        plot_paths = _plot_result(result, prefix, sweep=False)
+        for p in plot_paths:
+            print(f"Wrote plot to {p}")
 
     return 0
+
+
+def _infer_format_from_path(path: str) -> str:
+    ext = Path(path).suffix.lower()
+    if ext == ".csv":
+        return "csv"
+    if ext in (".h5", ".hdf5"):
+        return "hdf5"
+    return "json"
 
 
 if __name__ == "__main__":

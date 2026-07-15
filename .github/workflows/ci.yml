@@ -62,3 +62,22 @@ jobs:
           test -f /tmp/slices_metric_slices.csv
           PYTHONPATH=target/release python3 shbt_simulate.py --mode all --format hdf5 --output /tmp/shbt_all.h5
           test -f /tmp/shbt_all.h5
+
+      - name: Test configuration file workflow
+        run: |
+          cp target/release/libshbt_simulator.so target/release/shbt_simulator.so
+          PYTHONPATH=target/release python3 shbt_simulate.py --config config.default.yaml --output-dir /tmp/config_test --mode audit
+          test -d /tmp/config_test
+          cat > /tmp/my_config.yaml <<'EOF'
+          mode: all
+          branch: [26, 8, 312]
+          observer_radius_fraction: 0.125
+          redshift_max: 3.0
+          redshift_samples: 5
+          particles: 256
+          output_dir: /tmp/config_test2
+          export_formats: [json, csv]
+          plot: true
+          EOF
+          PYTHONPATH=target/release python3 shbt_simulate.py --config /tmp/my_config.yaml --redshift-samples 7
+          test -d /tmp/config_test2
