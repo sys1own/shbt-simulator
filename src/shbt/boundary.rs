@@ -3,7 +3,7 @@
 use rug::float::Constant;
 use rug::{Complex, Float, Rational};
 
-const PREC: u32 = 512;
+pub(crate) const PREC: u32 = 512;
 
 const BENCHMARK_BRANCH: (u32, u32, u32) = (26, 8, 312);
 const LEPTON_LEVEL: u32 = 26;
@@ -151,7 +151,7 @@ impl StaticBoundary {
         Float::with_val(PREC, Constant::Pi)
     }
 
-    fn is_close(a: &Float, b: &Float, tol: &Float) -> bool {
+    pub(crate) fn is_close(a: &Float, b: &Float, tol: &Float) -> bool {
         let mut diff = a.clone();
         diff -= b;
         diff.abs() <= tol.clone()
