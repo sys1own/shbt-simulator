@@ -50,13 +50,15 @@ The paper and simulator are developed **in lockstep**:
 │       ├── baryogenesis.rs  # BaryogenesisOptimizer (η_B, de-rendering)
 │       └── causal_point.rs  # CausalPoint (observer memory, history)
 ├── examples/
-│   └── run_audit.py        # Thin wrapper around shbt_simulate.py --mode audit
-├── shbt_simulate.py        # Customisable CLI/API for research runs
+│   ├── run_audit.py              # Thin wrapper around shbt_simulate.py --mode audit
+│   └── shbt_notebook.ipynb       # Jupyter / Colab example
+├── shbt_simulate.py             # Customisable CLI/API for research runs
+├── requirements.txt             # Optional Python dependencies (plots/HDF5/pandas)
 ├── tests/
-│   └── test_shbt.rs        # Unit tests for all SHBT components
-├── main.pdf                # The SHBT paper (formal theory)
-├── paper_references.md     # Mapping from paper to code
-└── README.md               # This file
+│   └── test_shbt.rs             # Unit tests for all SHBT components
+├── main.pdf                     # The SHBT paper (formal theory)
+├── paper_references.md          # Mapping from paper to code
+└── README.md                    # This file
 ```
 
 ---
@@ -67,6 +69,7 @@ The paper and simulator are developed **in lockstep**:
 - **Python** (3.8 or later) – with `pip`
 - **maturin** (for building the Python module) – `pip install maturin`
 - (Optional) **cargo‑test** for running unit tests
+- (Optional) `matplotlib`, `h5py`, `pandas` for data export and plots – `pip install -r requirements.txt`
 
 ---
 
@@ -160,6 +163,52 @@ result = shbt_simulate.simulate({
 })
 print(result["audit"]["eta_b"])
 ```
+
+### Export formats
+
+`shbt_simulate.py` can write results as JSON (default), CSV, or HDF5:
+
+```bash
+python shbt_simulate.py --mode all --output result.json
+python shbt_simulate.py --mode cosmology --format csv --output slices
+python shbt_simulate.py --mode all --format hdf5 --output result.h5
+```
+
+- CSV produces `{prefix}_metric_slices.csv` and `{prefix}_history.csv`.
+- HDF5 requires `h5py` and stores the full nested result tree.
+
+### Optional plots
+
+If `matplotlib` is installed, `--plot` writes PNG figures alongside the data export:
+
+```bash
+PYTHONPATH=target/release python shbt_simulate.py --mode all --output result.json --plot
+```
+
+This creates `result_eigenvalues.png`, `result_spatial_metric.png`, and (for sweeps) `result_eta_b.png`.
+
+### Parameter sweeps
+
+Write a JSON file with list-valued parameters, e.g. `sweep.json`:
+
+```json
+{
+  "redshift_samples": [5, 9, 13],
+  "observer_radius_fraction": [0.1, 0.125]
+}
+```
+
+Then run:
+
+```bash
+python shbt_simulate.py --sweep sweep.json --output sweep_result.json
+```
+
+The simulator evaluates the Cartesian product of all parameter lists. For sweep runs you can also add `--plot` to visualise `η_b` across configurations.
+
+### Jupyter / Colab
+
+See [`examples/shbt_notebook.ipynb`](examples/shbt_notebook.ipynb) for a notebook that loads the simulator, runs a custom configuration, and plots the results.
 
 ## Python bindings
 

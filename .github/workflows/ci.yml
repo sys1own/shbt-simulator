@@ -49,3 +49,16 @@ jobs:
           cp target/release/libshbt_simulator.so target/release/shbt_simulator.so
           PYTHONPATH=target/release python3 shbt_simulate.py --mode all --output /tmp/shbt_all.json
           test -f /tmp/shbt_all.json
+
+      - name: Test exports and optional plotting
+        run: |
+          pip install -r requirements.txt
+          cp target/release/libshbt_simulator.so target/release/shbt_simulator.so
+          PYTHONPATH=target/release python3 shbt_simulate.py --mode all --output /tmp/shbt_plot.json --plot
+          test -f /tmp/shbt_plot.json
+          test -f /tmp/shbt_plot_eigenvalues.png
+          test -f /tmp/shbt_plot_spatial_metric.png
+          PYTHONPATH=target/release python3 shbt_simulate.py --mode cosmology --format csv --output /tmp/slices
+          test -f /tmp/slices_metric_slices.csv
+          PYTHONPATH=target/release python3 shbt_simulate.py --mode all --format hdf5 --output /tmp/shbt_all.h5
+          test -f /tmp/shbt_all.h5
