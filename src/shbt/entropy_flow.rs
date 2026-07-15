@@ -2,9 +2,12 @@
 
 use crate::shbt::boundary::PREC;
 use crate::shbt::boundary::{EntropyUpdate, StaticBoundary};
+use pyo3::prelude::*;
+use pyo3::types::PyDict;
 use rug::Float;
 
 #[derive(Debug, Clone)]
+#[pyclass]
 pub struct BulkMetricSlice {
     pub tau: Float,
     pub load_vector: [Float; 5],
@@ -18,6 +21,7 @@ pub struct BulkMetricSlice {
 }
 
 #[derive(Debug, Clone)]
+#[pyclass]
 pub struct ProjectionReport {
     pub slice_count: usize,
     pub projector_rank: usize,
@@ -26,6 +30,61 @@ pub struct ProjectionReport {
     pub positive_definite: bool,
     pub spatial_metric_shape: bool,
     pub all_passed: bool,
+}
+
+#[pymethods]
+impl BulkMetricSlice {
+    pub fn to_dict<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyDict>> {
+        let d = PyDict::new_bound(py);
+        d.set_item("tau", self.tau.to_f64())?;
+        let load: Vec<f64> = self.load_vector.iter().map(|v| v.to_f64()).collect();
+        d.set_item("load_vector", load)?;
+        let euler: Vec<f64> = self.euler_flux.iter().map(|v| v.to_f64()).collect();
+        d.set_item("euler_flux", euler)?;
+        let exec: Vec<Vec<f64>> = self
+            .execution_vectors
+            .iter()
+            .map(|row| row.iter().map(|v| v.to_f64()).collect())
+            .collect();
+        d.set_item("execution_vectors", exec)?;
+        let unstab: Vec<Vec<f64>> = self
+            .unstabilized_metric
+            .iter()
+            .map(|row| row.iter().map(|v| v.to_f64()).collect())
+            .collect();
+        d.set_item("unstabilized_metric", unstab)?;
+        let metric: Vec<Vec<f64>> = self
+            .metric_components
+            .iter()
+            .map(|row| row.iter().map(|v| v.to_f64()).collect())
+            .collect();
+        d.set_item("metric_components", metric)?;
+        let spatial: Vec<Vec<f64>> = self
+            .spatial_metric
+            .iter()
+            .map(|row| row.iter().map(|v| v.to_f64()).collect())
+            .collect();
+        d.set_item("spatial_metric", spatial)?;
+        d.set_item("epsilon_eig", self.epsilon_eig.to_f64())?;
+        let eigs: Vec<f64> = self.eigenvalues.iter().map(|v| v.to_f64()).collect();
+        d.set_item("eigenvalues", eigs)?;
+        Ok(d)
+    }
+}
+
+#[pymethods]
+impl ProjectionReport {
+    pub fn to_dict<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyDict>> {
+        let d = PyDict::new_bound(py);
+        d.set_item("slice_count", self.slice_count)?;
+        d.set_item("projector_rank", self.projector_rank)?;
+        d.set_item("symmetric", self.symmetric)?;
+        d.set_item("trace_normalized", self.trace_normalized)?;
+        d.set_item("positive_definite", self.positive_definite)?;
+        d.set_item("spatial_metric_shape", self.spatial_metric_shape)?;
+        d.set_item("all_passed", self.all_passed)?;
+        Ok(d)
+    }
 }
 
 #[derive(Debug, Clone)]

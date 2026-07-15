@@ -1,5 +1,6 @@
 use pyo3::exceptions::{PyIndexError, PyValueError};
 use pyo3::prelude::*;
+use pyo3::types::{PyDict, PyList};
 use rug::Assign;
 use rug::{Complex, Float, Rational};
 use std::collections::HashMap;
@@ -7,6 +8,7 @@ use std::fmt::Write as FmtWrite;
 use rayon::prelude::*;
 
 pub mod shbt;
+use crate::shbt::*;
 
 pyo3::create_exception!(anyon_simulator, NonAbelianLeakageError, pyo3::exceptions::PyException);
 
@@ -3311,8 +3313,172 @@ impl CircuitCompiler {
     }
 }
 
+#[derive(Debug, Clone)]
+#[pyclass]
+pub struct ShbtReport {
+    pub branch: (u32, u32, u32),
+    pub boundary_report: VerificationReport,
+    pub projection_report: ProjectionReport,
+    pub memory_report: MemoryReport,
+    pub benchmark_delta: BenchmarkDelta,
+    pub baryogenesis_identity: BaryogenesisIdentity,
+    pub eta_b: Float,
+    pub stress_energy_preserved: bool,
+    pub metric_slices: Vec<BulkMetricSlice>,
+    pub history_entries: Vec<CoordinateLogEntry>,
+}
+
+#[pymethods]
+impl ShbtReport {
+    pub fn to_dict<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyDict>> {
+        let d = PyDict::new_bound(py);
+        d.set_item("branch", self.branch)?;
+        d.set_item("boundary_report", self.boundary_report.to_dict(py)?)?;
+        d.set_item("projection_report", self.projection_report.to_dict(py)?)?;
+        d.set_item("memory_report", self.memory_report.to_dict(py)?)?;
+        d.set_item("benchmark_delta", self.benchmark_delta.to_dict(py)?)?;
+        d.set_item("baryogenesis_identity", self.baryogenesis_identity.to_dict(py)?)?;
+        d.set_item("eta_b", self.eta_b.to_f64())?;
+        d.set_item("stress_energy_preserved", self.stress_energy_preserved)?;
+        let slices: PyResult<Vec<Bound<'py, PyDict>>> = self
+            .metric_slices
+            .iter()
+            .map(|s| s.to_dict(py))
+            .collect();
+        d.set_item("metric_slices", slices?)?;
+        let history: PyResult<Vec<Bound<'py, PyDict>>> = self
+            .history_entries
+            .iter()
+            .map(|e| e.to_dict(py))
+            .collect();
+        d.set_item("history_entries", history?)?;
+        Ok(d)
+    }
+
+    #[getter]
+    fn branch(&self) -> (u32, u32, u32) {
+        self.branch
+    }
+
+    #[getter]
+    fn eta_b(&self) -> f64 {
+        self.eta_b.to_f64()
+    }
+
+    #[getter]
+    fn stress_energy_preserved(&self) -> bool {
+        self.stress_energy_preserved
+    }
+
+    #[getter]
+    fn metric_slice_count(&self) -> usize {
+        self.metric_slices.len()
+    }
+
+    #[getter]
+    fn history_entry_count(&self) -> usize {
+        self.history_entries.len()
+    }
+
+    #[getter]
+    fn framing_defect(&self) -> f64 {
+        self.boundary_report.framing_defect.to_f64()
+    }
+
+    #[getter]
+    fn modular_invariant(&self) -> bool {
+        self.boundary_report.modular_invariant
+    }
+
+    #[getter]
+    fn zero_energy_locked(&self) -> bool {
+        self.boundary_report.zero_energy_locked
+    }
+
+    #[getter]
+    fn projection_dimension_26_to_4(&self) -> bool {
+        self.boundary_report.projection_dimension_26_to_4
+    }
+
+    #[getter]
+    fn slice_count(&self) -> usize {
+        self.projection_report.slice_count
+    }
+
+    #[getter]
+    fn projection_all_passed(&self) -> bool {
+        self.projection_report.all_passed
+    }
+
+    #[getter]
+    fn memory_all_passed(&self) -> bool {
+        self.memory_report.all_passed
+    }
+}
+
+#[derive(Debug, Clone)]
+#[pyclass]
+pub struct ShbtSimulator {
+    boundary: StaticBoundary,
+    projection: HolographicProjection,
+    causal_point: CausalPoint,
+    optimizer: BaryogenesisOptimizer,
+}
+
+#[pymethods]
+impl ShbtSimulator {
+    #[new]
+    fn new() -> Self {
+        let boundary = StaticBoundary::new();
+        let projection = HolographicProjection::new(boundary.clone());
+        let causal_point = CausalPoint::new(boundary.clone());
+        let optimizer = BaryogenesisOptimizer::new(boundary.clone());
+        Self {
+            boundary,
+            projection,
+            causal_point,
+            optimizer,
+        }
+    }
+
+    fn run_full_audit(&self) -> ShbtReport {
+        let metric_slices = self.projection.project_entropy_cascade();
+        let boundary_report = self.boundary.verify_equations();
+        let projection_report = self.projection.verify_projection(&metric_slices);
+        let memory_report = self.causal_point.verify_memory_budget();
+        let benchmark_delta = self.optimizer.run_benchmark(512);
+        let stress_energy_preserved = benchmark_delta.stress_energy_preserved;
+        let baryogenesis_identity = self.optimizer.baryogenesis_identity();
+        let eta_b = baryogenesis_identity.eta_b.clone();
+        let history_entries = self.causal_point.crystallize_history();
+        ShbtReport {
+            branch: self.boundary.benchmark_branch,
+            boundary_report,
+            projection_report,
+            memory_report,
+            benchmark_delta,
+            baryogenesis_identity,
+            eta_b,
+            stress_energy_preserved,
+            metric_slices,
+            history_entries,
+        }
+    }
+
+    fn simulate_cosmology(&self, z_max: f64, samples: usize) -> Vec<BulkMetricSlice> {
+        let mut cp = CausalPoint::new(self.boundary.clone());
+        cp.redshift_max = Float::with_val(PREC, z_max);
+        cp.redshift_samples = samples;
+        let slices = cp.projection.project_entropy_cascade();
+        let cone = cp.build_past_light_cone();
+        cone.iter()
+            .map(|s| slices[s.index.min(slices.len() - 1)].clone())
+            .collect()
+    }
+}
+
 #[pymodule]
-mod anyon_simulator {
+mod shbt_simulator {
     pub const PARENT: u32 = super::PARENT;
     pub const LEPTON: u32 = super::LEPTON;
     pub const QUARK: u32 = super::QUARK;
@@ -3355,4 +3521,46 @@ mod anyon_simulator {
 
     #[pymodule_export]
     use super::SurfaceCodeLattice;
+
+    #[pymodule_export]
+    use super::ShbtSimulator;
+
+    #[pymodule_export]
+    use super::ShbtReport;
+
+    #[pymodule_export]
+    use super::shbt::BulkMetricSlice;
+
+    #[pymodule_export]
+    use super::shbt::ProjectionReport;
+
+    #[pymodule_export]
+    use super::shbt::EntropyUpdate;
+
+    #[pymodule_export]
+    use super::shbt::TemporalKernelAudit;
+
+    #[pymodule_export]
+    use super::shbt::VerificationReport;
+
+    #[pymodule_export]
+    use super::shbt::BaryogenesisIdentity;
+
+    #[pymodule_export]
+    use super::shbt::FieldSimulation;
+
+    #[pymodule_export]
+    use super::shbt::BenchmarkDelta;
+
+    #[pymodule_export]
+    use super::shbt::LightConeSample;
+
+    #[pymodule_export]
+    use super::shbt::LocalPropertyPacket;
+
+    #[pymodule_export]
+    use super::shbt::CoordinateLogEntry;
+
+    #[pymodule_export]
+    use super::shbt::MemoryReport;
 }

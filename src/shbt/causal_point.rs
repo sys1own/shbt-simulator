@@ -2,6 +2,8 @@
 
 use crate::shbt::boundary::{StaticBoundary, PREC};
 use crate::shbt::entropy_flow::{BulkMetricSlice, HolographicProjection};
+use pyo3::prelude::*;
+use pyo3::types::PyDict;
 use rug::float::Constant;
 use rug::Float;
 
@@ -10,6 +12,7 @@ const HBAR_J_S: f64 = 1.054_571_817e-34;
 const LOW_SU3_WEIGHTS: [(u32, u32); 3] = [(0, 0), (1, 0), (0, 1)];
 
 #[derive(Debug, Clone)]
+#[pyclass]
 pub struct LightConeSample {
     pub index: usize,
     pub redshift: Float,
@@ -25,6 +28,7 @@ pub struct LightConeSample {
 }
 
 #[derive(Debug, Clone)]
+#[pyclass]
 pub struct LocalPropertyPacket {
     pub step: usize,
     pub boundary_address: String,
@@ -44,6 +48,7 @@ pub struct LocalPropertyPacket {
 }
 
 #[derive(Debug, Clone)]
+#[pyclass]
 pub struct CoordinateLogEntry {
     pub step: usize,
     pub boundary_address: String,
@@ -58,6 +63,7 @@ pub struct CoordinateLogEntry {
 }
 
 #[derive(Debug, Clone)]
+#[pyclass]
 pub struct MemoryReport {
     pub R_H_m: Float,
     pub R_local_m: Float,
@@ -71,6 +77,114 @@ pub struct MemoryReport {
     pub past_light_cone_samples: usize,
     pub property_packets: usize,
     pub all_passed: bool,
+}
+
+#[pymethods]
+impl LightConeSample {
+    pub fn to_dict<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyDict>> {
+        let d = PyDict::new_bound(py);
+        d.set_item("index", self.index)?;
+        d.set_item("redshift", self.redshift.to_f64())?;
+        d.set_item("tau_lock_s", self.tau_lock_s.to_f64())?;
+        d.set_item("f_load", self.f_load.to_f64())?;
+        d.set_item("H_eff_per_s", self.H_eff_per_s.to_f64())?;
+        d.set_item("dt_dz_s", self.dt_dz_s.to_f64())?;
+        d.set_item("dchi_dz_m", self.dchi_dz_m.to_f64())?;
+        d.set_item("lookback_time_s", self.lookback_time_s.to_f64())?;
+        d.set_item("comoving_distance_m", self.comoving_distance_m.to_f64())?;
+        d.set_item("sequence_index", self.sequence_index)?;
+        d.set_item("coordinate", self.coordinate)?;
+        Ok(d)
+    }
+}
+
+#[pymethods]
+impl LocalPropertyPacket {
+    pub fn to_dict<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyDict>> {
+        let d = PyDict::new_bound(py);
+        d.set_item("step", self.step)?;
+        d.set_item("boundary_address", self.boundary_address.clone())?;
+        d.set_item("coordinate", self.coordinate)?;
+        d.set_item("redshift", self.redshift.to_f64())?;
+        d.set_item(
+            "normalized_bit_loading",
+            self.normalized_bit_loading.to_f64(),
+        )?;
+        d.set_item("entanglement_density", self.entanglement_density.to_f64())?;
+        d.set_item("mass_kg", self.mass_kg.to_f64())?;
+        d.set_item("spin", self.spin.to_f64())?;
+        let charge: Vec<f64> = self.charge_vector.iter().map(|v| v.to_f64()).collect();
+        d.set_item("charge_vector", charge)?;
+        d.set_item("su2_label_left", self.su2_label_left)?;
+        d.set_item("su2_label_right", self.su2_label_right)?;
+        d.set_item("su3_weight_left", self.su3_weight_left)?;
+        d.set_item("su3_weight_right", self.su3_weight_right)?;
+        let gravity: Vec<f64> = self
+            .gravity_coordinates
+            .iter()
+            .map(|v| v.to_f64())
+            .collect();
+        d.set_item("gravity_coordinates", gravity)?;
+        let metric: Vec<Vec<f64>> = self
+            .metric_components
+            .iter()
+            .map(|row| row.iter().map(|v| v.to_f64()).collect())
+            .collect();
+        d.set_item("metric_components", metric)?;
+        Ok(d)
+    }
+}
+
+#[pymethods]
+impl CoordinateLogEntry {
+    pub fn to_dict<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyDict>> {
+        let d = PyDict::new_bound(py);
+        d.set_item("step", self.step)?;
+        d.set_item("boundary_address", self.boundary_address.clone())?;
+        d.set_item("source_coordinate", self.source_coordinate)?;
+        d.set_item("selected_coordinate", self.selected_coordinate)?;
+        d.set_item("redshift", self.redshift.to_f64())?;
+        d.set_item("collapse_index", self.collapse_index)?;
+        d.set_item("retrieval_cost_bits", self.retrieval_cost_bits.to_f64())?;
+        d.set_item(
+            "entropy_budget_residual",
+            self.entropy_budget_residual.to_f64(),
+        )?;
+        let pointer: Vec<f64> = self
+            .pointer_wavefunction
+            .iter()
+            .map(|v| v.to_f64())
+            .collect();
+        d.set_item("pointer_wavefunction", pointer)?;
+        d.set_item("packet", self.packet.to_dict(py)?)?;
+        Ok(d)
+    }
+}
+
+#[pymethods]
+impl MemoryReport {
+    pub fn to_dict<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyDict>> {
+        let d = PyDict::new_bound(py);
+        d.set_item("R_H_m", self.R_H_m.to_f64())?;
+        d.set_item("R_local_m", self.R_local_m.to_f64())?;
+        d.set_item("f_H", self.f_H.to_f64())?;
+        d.set_item("local_available_bits", self.local_available_bits.to_f64())?;
+        d.set_item("hidden_bits", self.hidden_bits.to_f64())?;
+        d.set_item("entropy_limit_bits", self.entropy_limit_bits.to_f64())?;
+        d.set_item("sigma", self.sigma.to_f64())?;
+        d.set_item(
+            "localized_entropy_gradient_per_m",
+            self.localized_entropy_gradient_per_m.to_f64(),
+        )?;
+        d.set_item(
+            "gravitational_acceleration_m_per_s2",
+            self.gravitational_acceleration_m_per_s2.to_f64(),
+        )?;
+        d.set_item("past_light_cone_samples", self.past_light_cone_samples)?;
+        d.set_item("property_packets", self.property_packets)?;
+        d.set_item("all_passed", self.all_passed)?;
+        Ok(d)
+    }
 }
 
 #[derive(Debug, Clone)]
