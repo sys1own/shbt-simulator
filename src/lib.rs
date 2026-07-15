@@ -6,6 +6,8 @@ use std::collections::HashMap;
 use std::fmt::Write as FmtWrite;
 use rayon::prelude::*;
 
+mod shbt;
+
 pyo3::create_exception!(anyon_simulator, NonAbelianLeakageError, pyo3::exceptions::PyException);
 
 const EVAL_PREC: u32 = 512;
@@ -582,7 +584,7 @@ fn su2_f_matrix(level: u32) -> [[Complex; 4]; 4] {
     matrix
 }
 
-fn su2_braid_matrix(level: u32) -> [[Complex; 4]; 4] {
+fn su2_braid_matrix_4x4(level: u32) -> [[Complex; 4]; 4] {
     let precision = EVAL_PREC;
     let fmat = su2_f_matrix(level);
     let rdiag = su2_r_phases(level);
@@ -662,52 +664,6 @@ fn so10_r_phases(level: u32) -> [Complex; 4] {
         out[i].assign(&p);
     }
     out
-}
-
-fn su3_braid_matrix(level: u32) -> [[Complex; 4]; 4] {
-    let rdiag = su3_r_phases(level);
-    let fmat = su2_f_matrix(level);
-    let mut tmat: [[Complex; 4]; 4] = std::array::from_fn(|_| std::array::from_fn(|_| Complex::with_val(EVAL_PREC, (0, 0))));
-    for i in 0..4 {
-        for j in 0..4 {
-            tmat[i][j].assign(&rdiag[i]);
-            tmat[i][j] *= &fmat[i][j];
-        }
-    }
-    let mut braid: [[Complex; 4]; 4] = std::array::from_fn(|_| std::array::from_fn(|_| Complex::with_val(EVAL_PREC, (0, 0))));
-    for i in 0..4 {
-        for j in 0..4 {
-            for k in 0..4 {
-                let mut tmp = fmat[k][i].clone();
-                tmp *= &tmat[k][j];
-                braid[i][j] += &tmp;
-            }
-        }
-    }
-    braid
-}
-
-fn so10_braid_matrix(level: u32) -> [[Complex; 4]; 4] {
-    let rdiag = so10_r_phases(level);
-    let fmat = su2_f_matrix(level);
-    let mut tmat: [[Complex; 4]; 4] = std::array::from_fn(|_| std::array::from_fn(|_| Complex::with_val(EVAL_PREC, (0, 0))));
-    for i in 0..4 {
-        for j in 0..4 {
-            tmat[i][j].assign(&rdiag[i]);
-            tmat[i][j] *= &fmat[i][j];
-        }
-    }
-    let mut braid: [[Complex; 4]; 4] = std::array::from_fn(|_| std::array::from_fn(|_| Complex::with_val(EVAL_PREC, (0, 0))));
-    for i in 0..4 {
-        for j in 0..4 {
-            for k in 0..4 {
-                let mut tmp = fmat[k][i].clone();
-                tmp *= &tmat[k][j];
-                braid[i][j] += &tmp;
-            }
-        }
-    }
-    braid
 }
 
 // ===========================================================================
@@ -1306,7 +1262,7 @@ impl AnyonBraidingEngine {
                 unitary[i][i].assign(&rdiag[i]);
             }
         } else {
-            let braid = su2_braid_matrix(26);
+            let braid = su2_braid_matrix_4x4(26);
             for i in 0..4 {
                 for j in 0..4 {
                     unitary[i][j].assign(&braid[i][j]);
