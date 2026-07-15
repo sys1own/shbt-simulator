@@ -78,6 +78,90 @@ def _ensure_rust() -> None:
         ) from _IMPORT_ERROR
 
 
+_LOGGER = logging.getLogger("shbt")
+
+
+# Standard logging attributes we do not want to leak into JSON event payloads.
+_STD_LOG_ATTRS = {
+    "name", "msg", "args", "levelname", "levelno", "pathname", "filename",
+    "module", "lineno", "funcName", "created", "msecs", "relativeCreated",
+    "thread", "threadName", "process", "processName", "exc_info", "exc_text",
+    "stack_info", "message", "asctime", "event",
+}
+
+
+class _JsonFormatter(logging.Formatter):
+    """Emit log records as JSON lines.
+
+    When a record carries an ``event`` extra, the event name and any extra
+    keyword fields are serialised directly (e.g. ``{"event": "audit_complete",
+    "eta_b": 6.45e-10}``). Otherwise a plain ``message`` field is emitted.
+    """
+
+    def format(self, record: logging.LogRecord) -> str:
+        payload: dict[str, Any] = {
+            "timestamp": self.formatTime(record),
+            "level": record.levelname,
+        }
+        event = getattr(record, "event", None)
+        if event:
+            payload["event"] = event
+            for key, value in record.__dict__.items():
+                if key in _STD_LOG_ATTRS or key.startswith("_") or callable(value):
+                    continue
+                payload[key] = value
+        else:
+            payload["message"] = record.getMessage()
+        return json.dumps(payload, default=str)
+
+
+def _setup_logging(
+    level_name: str = "INFO",
+    fmt: str = "text",
+    log_file: str | Path | None = None,
+    quiet: bool = False,
+) -> None:
+    """Configure the SHBT logger."""
+    level = getattr(logging, level_name.upper(), logging.INFO)
+    _LOGGER.setLevel(level)
+    _LOGGER.handlers.clear()
+    _LOGGER.propagate = False
+
+    formatter: logging.Formatter
+    if fmt == "json":
+        formatter = _JsonFormatter()
+    else:
+        formatter = logging.Formatter(
+            fmt="%(asctime)s [%(levelname)s] %(message)s",
+            datefmt="%Y-%m-%d %H:%M:%S",
+        )
+
+    if log_file:
+        fh = logging.FileHandler(log_file, mode="a")
+        fh.setLevel(level)
+        fh.setFormatter(formatter)
+        _LOGGER.addHandler(fh)
+
+    if not quiet:
+        ch = logging.StreamHandler(sys.stdout)
+        ch.setLevel(level)
+        ch.setFormatter(formatter)
+        _LOGGER.addHandler(ch)
+    else:
+        # Even in quiet mode, route errors to stderr.
+        ch = logging.StreamHandler(sys.stderr)
+        ch.setLevel(max(level, logging.ERROR))
+        ch.setFormatter(formatter)
+        _LOGGER.addHandler(ch)
+
+
+def _log_event(event: str, **kwargs: Any) -> None:
+    """Emit a structured event through the logging system."""
+    text = ", ".join(f"{k}={v}" for k, v in kwargs.items())
+    message = f"{event}: {text}" if text else event
+    _LOGGER.info("%s", message, extra={"event": event, **kwargs})
+
+
 def get_version() -> str:
     """Return the simulator version from Cargo.toml, or 'unknown'."""
     cargo_toml = Path(__file__).with_name("Cargo.toml")
@@ -127,6 +211,10 @@ DEFAULT_CONFIG: dict[str, Any] = {
     "export_formats": ["json"],
     "plot": False,
     "verbose": False,
+    "log_level": "INFO",
+    "log_format": "text",
+    "log_file": None,
+    "quiet": False,
 }
 
 SHBT_CONFIG_SCHEMA: dict[str, Any] = {
@@ -153,6 +241,10 @@ SHBT_CONFIG_SCHEMA: dict[str, Any] = {
         },
         "plot": {"type": "boolean"},
         "verbose": {"type": "boolean"},
+        "log_level": {"type": "string", "enum": ["DEBUG", "INFO", "WARNING", "ERROR"]},
+        "log_format": {"type": "string", "enum": ["text", "json"]},
+        "log_file": {"type": ["string", "null"]},
+        "quiet": {"type": "boolean"},
     },
 }
 
@@ -245,10 +337,23 @@ def _merge_with_cli(args: argparse.Namespace) -> dict[str, Any]:
         config["seed"] = args.seed
     if args.format:
         config["export_formats"] = [args.format]
-    if args.verbose:
-        config["verbose"] = True
     if args.plot:
         config["plot"] = True
+
+    # Logging and output control
+    if args.log_level:
+        config["log_level"] = args.log_level.upper()
+    if args.verbose:
+        config["log_level"] = "DEBUG"
+        config["verbose"] = True
+    if args.quiet:
+        config["quiet"] = True
+        if not args.log_level and not args.verbose:
+            config["log_level"] = "WARNING"
+    if args.log_format:
+        config["log_format"] = args.log_format
+    if args.log_file:
+        config["log_file"] = args.log_file
 
     return config
 
@@ -581,14 +686,26 @@ def simulate(config: dict[str, Any]) -> dict[str, Any]:
     if mode in ("baryogenesis", "all"):
         identity = sim.baryogenesis_identity()
         benchmark = sim.baryogenesis_benchmark()
+        identity_dict = identity.to_dict()
+        benchmark_dict = benchmark.to_dict()
+        # Canonical top-level keys (mirrors the ShbtReport structure from Rust).
+        result["baryogenesis_identity"] = identity_dict
+        result["benchmark_delta"] = benchmark_dict
+        result["eta_b"] = identity_dict["eta_b"]
+        # Backward-compatible nested alias for older consumers.
         result["baryogenesis"] = {
-            "identity": identity.to_dict(),
-            "benchmark": benchmark.to_dict(),
+            "identity": identity_dict,
+            "benchmark": benchmark_dict,
         }
 
     if mode in ("history", "all"):
         entries = sim.crystallize_history()
         result["history"] = [e.to_dict() for e in entries]
+
+    if mode in ("audit", "all"):
+        # Ensure a top-level numeric eta_b is available for every mode that
+        # computes baryogenesis (audit already contains it under `audit.eta_b`).
+        result.setdefault("eta_b", result["audit"]["eta_b"])
 
     if mode not in ("audit", "cosmology", "baryogenesis", "history", "all"):
         raise ValueError(f"unknown simulation mode: {mode}")
@@ -616,10 +733,11 @@ def run_sweep(sweep_config: dict[str, Any]) -> dict[str, Any]:
     results: list[dict[str, Any]] = []
     total = len(configs)
     for i, cfg in enumerate(configs, 1):
-        logging.info("Sweep run %d/%d with config %s", i, total, cfg)
+        _LOGGER.info("Sweep run %d/%d with config %s", i, total, cfg)
         results.append(simulate(cfg))
     sweep_result: dict[str, Any] = {"sweep_configs": configs, "sweep_results": results}
     _add_repro_metadata(sweep_result)
+    _log_event("sweep_complete", sweep_runs=total)
     return sweep_result
 
 
@@ -641,8 +759,13 @@ def _summarise(result: dict[str, Any]) -> dict[str, Any]:
     if "cosmology" in result:
         summary["cosmology_slices"] = len(result["cosmology"])
 
-    if "baryogenesis" in result:
+    if "baryogenesis_identity" in result:
+        summary["eta_b"] = result["baryogenesis_identity"].get("eta_b")
+    elif "baryogenesis" in result:
         summary["eta_b"] = result["baryogenesis"]["identity"].get("eta_b")
+    if "benchmark_delta" in result:
+        summary["stress_energy_preserved"] = result["benchmark_delta"].get("stress_energy_preserved")
+    elif "baryogenesis" in result:
         summary["stress_energy_preserved"] = result["baryogenesis"]["benchmark"].get("stress_energy_preserved")
 
     if "history" in result:
@@ -652,6 +775,34 @@ def _summarise(result: dict[str, Any]) -> dict[str, Any]:
         summary["sweep_runs"] = len(result["sweep_results"])
 
     return summary
+
+
+def print_summary(result: dict[str, Any]) -> None:
+    """Print a clean, aligned ASCII table of the audit summary."""
+    if "audit" not in result:
+        return
+    audit = result["audit"]
+    rows = [
+        ("Branch", str(result["config"]["branch"])),
+        ("Framing defect (delta_fr)", str(audit.get("boundary_report", {}).get("framing_defect"))),
+        ("Modular invariant", str(audit.get("boundary_report", {}).get("modular_invariant"))),
+        ("Zero energy locked", str(audit.get("boundary_report", {}).get("zero_energy_locked"))),
+        ("Projection dimension 26 -> 4", str(audit.get("boundary_report", {}).get("projection_dimension_26_to_4"))),
+        ("eta_b", str(audit.get("eta_b"))),
+        ("Stress energy preserved", str(audit.get("stress_energy_preserved"))),
+        ("Metric slices", str(len(audit.get("metric_slices", [])))),
+        ("History entries", str(len(audit.get("history_entries", [])))),
+    ]
+    label_width = max(len(label) for label, _ in rows) + 2
+    value_width = max(len(value) for _, value in rows) + 2
+    total_width = label_width + value_width + 1
+    sep = "+" + "-" * total_width + "+"
+    print(sep)
+    print(f"| {'SHBT Audit Summary':<{total_width-2}} |")
+    print(sep)
+    for label, value in rows:
+        print(f"| {label:<{label_width-1}}| {value:<{value_width}}|")
+    print(sep)
 
 
 # ---------------------------------------------------------------------------
@@ -756,7 +907,31 @@ def _build_arg_parser() -> argparse.ArgumentParser:
         "--verbose",
         "-v",
         action="store_true",
-        help="print verbose progress logging",
+        help="alias for --log-level DEBUG",
+    )
+    parser.add_argument(
+        "--log-level",
+        choices=["DEBUG", "INFO", "WARNING", "ERROR"],
+        default=None,
+        help="set logging level (default: INFO)",
+    )
+    parser.add_argument(
+        "--log-format",
+        choices=["text", "json"],
+        default=None,
+        help="log output format (default: text)",
+    )
+    parser.add_argument(
+        "--log-file",
+        type=str,
+        default=None,
+        help="write log messages to this file in addition to the console",
+    )
+    parser.add_argument(
+        "--quiet",
+        "-q",
+        action="store_true",
+        help="suppress non-essential console output",
     )
     return parser
 
@@ -800,6 +975,12 @@ def _write_run_info(result: dict[str, Any], output_dir: Path, basename: str) -> 
     return info_path
 
 
+def _shbt_print(message: str, quiet: bool = False) -> None:
+    """Print a message unless quiet mode is enabled."""
+    if not quiet:
+        print(message)
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = _build_arg_parser()
     args = parser.parse_args(argv)
@@ -812,24 +993,30 @@ def main(argv: list[str] | None = None) -> int:
         output_path = args.output or f"sweep_{_timestamp_dir()}.json"
         paths = export_result(result, output_path, fmt=export_formats[0])
         for p in paths:
-            print(f"Wrote SHBT sweep output to {p}")
+            _shbt_print(f"Wrote SHBT sweep output to {p}", quiet=args.quiet)
         if args.plot:
             prefix = Path(output_path).with_name(Path(output_path).stem)
             plot_paths = _plot_result(result, prefix, sweep=True)
             for p in plot_paths:
-                print(f"Wrote plot to {p}")
+                _shbt_print(f"Wrote plot to {p}", quiet=args.quiet)
         return 0
 
     config = _merge_with_cli(args)
 
-    if config.get("verbose") or args.verbose:
-        logging.basicConfig(level=logging.INFO)
+    _setup_logging(
+        level_name=config.get("log_level", "INFO"),
+        fmt=config.get("log_format", "text"),
+        log_file=config.get("log_file"),
+        quiet=config.get("quiet", False),
+    )
 
-    logging.info("Starting SHBT simulation with config: %s", config)
+    _LOGGER.info("Starting SHBT simulation")
+    _log_event("simulation_start", **{k: v for k, v in config.items() if k not in ("log_file",)})
     start = time.time()
     result = simulate(config)
     duration = time.time() - start
     result["metadata"]["duration_s"] = duration
+    _log_event("simulation_complete", mode=config.get("mode"), duration_s=duration)
 
     # Determine where to write results
     explicit_output = args.output
@@ -853,10 +1040,10 @@ def main(argv: list[str] | None = None) -> int:
         written.extend(export_results(result, out_dir, basename=output_name, formats=export_formats))
 
     for p in written:
-        print(f"Wrote SHBT output to {p}")
+        _shbt_print(f"Wrote SHBT output to {p}", quiet=config.get("quiet", False))
 
     _write_run_info(result, out_dir, output_name)
-    print(f"Wrote run log to {out_dir / (output_name + '.log')}")
+    _shbt_print(f"Wrote run log to {out_dir / (output_name + '.log')}", quiet=config.get("quiet", False))
 
     if config.get("plot") or args.plot:
         if explicit_output:
@@ -865,7 +1052,19 @@ def main(argv: list[str] | None = None) -> int:
             prefix = out_dir / output_name
         plot_paths = _plot_result(result, prefix, sweep=False)
         for p in plot_paths:
-            print(f"Wrote plot to {p}")
+            _shbt_print(f"Wrote plot to {p}", quiet=config.get("quiet", False))
+
+    if config.get("mode") in ("audit", "all"):
+        _log_event(
+            "audit_complete",
+            branch=config.get("branch"),
+            eta_b=result["audit"].get("eta_b"),
+            framing_defect=result["audit"].get("boundary_report", {}).get("framing_defect"),
+            stress_energy_preserved=result["audit"].get("stress_energy_preserved"),
+            metric_slices=len(result["audit"].get("metric_slices", [])),
+            history_entries=len(result["audit"].get("history_entries", [])),
+        )
+        print_summary(result)
 
     return 0
 

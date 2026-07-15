@@ -89,9 +89,15 @@ def test_simulate_baryogenesis_mode() -> None:
     result = shbt_simulate.simulate({"mode": "baryogenesis", "particles": 256})
     assert result["config"]["mode"] == "baryogenesis"
     assert result["config"]["particles"] == 256
-    identity = result["baryogenesis"]["identity"]
-    assert abs(identity["eta_b"] - 6.449923359416e-10) < 1e-20
-    assert result["baryogenesis"]["benchmark"]["stress_energy_preserved"] is True
+    # Canonical top-level keys
+    assert "baryogenesis_identity" in result
+    assert "benchmark_delta" in result
+    assert isinstance(result["eta_b"], float)
+    assert abs(result["eta_b"] - 6.449923359416e-10) < 1e-20
+    assert abs(result["baryogenesis_identity"]["eta_b"] - 6.449923359416e-10) < 1e-20
+    assert result["benchmark_delta"]["stress_energy_preserved"] is True
+    # Backward-compatible nested alias
+    assert result["baryogenesis"]["identity"]["eta_b"] == result["baryogenesis_identity"]["eta_b"]
 
 
 def test_simulate_history_seed_reproducibility() -> None:
@@ -279,3 +285,26 @@ def test_cli_seed_reproducibility(tmp_path: Path) -> None:
 def test_cli_invalid_branch() -> None:
     proc = _run_cli(["--branch", "1", "2"])
     assert proc.returncode != 0
+
+
+def test_cli_summary_printed(tmp_path: Path) -> None:
+    out = tmp_path / "audit.json"
+    proc = _run_cli(["--mode", "audit", "--output", str(out)])
+    assert proc.returncode == 0, proc.stderr
+    assert "SHBT Audit Summary" in proc.stdout
+    assert "eta_b" in proc.stdout
+
+
+def test_cli_json_logging(tmp_path: Path) -> None:
+    out = tmp_path / "audit.json"
+    proc = _run_cli(["--mode", "audit", "--log-format", "json", "--output", str(out)])
+    assert proc.returncode == 0, proc.stderr
+    assert '"event": "audit_complete"' in proc.stdout
+
+
+def test_cli_quiet(tmp_path: Path) -> None:
+    out = tmp_path / "audit.json"
+    proc = _run_cli(["--mode", "audit", "--quiet", "--output", str(out)])
+    assert proc.returncode == 0, proc.stderr
+    assert "Wrote SHBT output" not in proc.stdout
+    assert "SHBT Audit Summary" in proc.stdout
