@@ -6,7 +6,7 @@ use std::collections::HashMap;
 use std::fmt::Write as FmtWrite;
 use rayon::prelude::*;
 
-mod shbt;
+pub mod shbt;
 
 pyo3::create_exception!(anyon_simulator, NonAbelianLeakageError, pyo3::exceptions::PyException);
 
@@ -2099,8 +2099,10 @@ impl TopologicalTracker {
     ///
     /// The pairwise Gauss integral kernel:
     ///
-    ///     Lk(i,j) = 1/(4π) Σ [ (r1_mid - r2_mid) · (dr1 × dr2)
+    /// ```text
+    /// Lk(i,j) = 1/(4π) Σ [ (r1_mid - r2_mid) · (dr1 × dr2)
     ///                           / |r1_mid - r2_mid|³ ]
+    /// ```
     ///
     /// is computed with 512-bit GMP scratch via ``rug::Float``.  The outer
     /// loop over segment pairs is parallelised with rayon ``into_par_iter``.
