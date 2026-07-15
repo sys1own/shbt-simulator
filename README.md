@@ -60,10 +60,15 @@ PYTHONPATH=target/release python examples/run_audit.py
 
 You should see the branch `(26, 8, 312)`, a framing defect near zero, `modular_invariant=True`, `zero_energy_locked=True`, `projection_dimension_26_to_4=True`, `eta_b ≈ 6.449923359416e-10`, and `stress_energy_preserved=True`.
 
-## Python reference implementation
+## Python bindings
 
-`shbt_core.py` is the pure-Python reference implementation. If `shbt_simulator` is installed it will use the Rust extension automatically; otherwise it falls back to the pure-Python code.
+All SHBT audit structs and the top-level `ShbtSimulator` are exposed as `#[pyclass]` objects in the `shbt_simulator` module. The easiest entry point from Python is:
 
-```bash
-python shbt_core.py
+```python
+import shbt_simulator
+sim = shbt_simulator.ShbtSimulator()
+report = sim.run_full_audit()
+print(report.branch, report.eta_b, report.stress_energy_preserved)
 ```
+
+Full paper-to-code mapping is maintained in `paper_references.md`.
