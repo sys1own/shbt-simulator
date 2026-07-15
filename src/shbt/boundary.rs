@@ -147,12 +147,9 @@ pub struct StaticBoundary {
 }
 
 impl StaticBoundary {
-    pub fn new() -> Self {
-        let benchmark_branch = BENCHMARK_BRANCH;
-        let lepton_level = LEPTON_LEVEL;
-        let quark_level = QUARK_LEVEL;
-        let parent_level = PARENT_LEVEL;
-        let charge_embedding = CHARGE_EMBEDDING;
+    pub fn new_with_branch(lepton_level: u32, quark_level: u32, parent_level: u32) -> Self {
+        let benchmark_branch = (lepton_level, quark_level, parent_level);
+        let charge_embedding = [lepton_level - 4, lepton_level - 3, lepton_level];
 
         let mut i_l_star = Float::with_val(PREC, parent_level);
         i_l_star /= Float::with_val(PREC, 2 * lepton_level);
@@ -206,6 +203,10 @@ impl StaticBoundary {
             s_boundary,
             t_boundary,
         }
+    }
+
+    pub fn new() -> Self {
+        Self::new_with_branch(LEPTON_LEVEL, QUARK_LEVEL, PARENT_LEVEL)
     }
 
     // ------------------------------------------------------------------

@@ -290,18 +290,16 @@ fn fnv1a_hash(payload: &str, outcome_count: usize) -> usize {
 }
 
 impl CausalPoint {
-    pub fn new(boundary: StaticBoundary) -> Self {
+    pub fn new_with_params(
+        boundary: StaticBoundary,
+        observer_radius_fraction: Float,
+        xi: [Float; 3],
+        redshift_max: Float,
+        redshift_samples: usize,
+    ) -> Self {
         let projection = HolographicProjection::new(boundary.clone());
 
         let observer_origin = [zero_float(), zero_float(), zero_float(), zero_float()];
-        let observer_radius_fraction = Float::with_val(PREC, 0.125);
-        let xi = [
-            Float::with_val(PREC, 1.0 / 26.0),
-            Float::with_val(PREC, 1.0 / 8.0),
-            Float::with_val(PREC, 1.0 / 312.0),
-        ];
-        let redshift_max = Float::with_val(PREC, 3.0);
-        let redshift_samples = 9;
 
         let mut rh_sq = Float::with_val(PREC, 3);
         rh_sq /= &boundary.lambda_holo;
@@ -409,6 +407,24 @@ impl CausalPoint {
             gravitational_acceleration_m_per_s2,
             planck_length_m,
         }
+    }
+
+    pub fn new(boundary: StaticBoundary) -> Self {
+        let observer_radius_fraction = Float::with_val(PREC, 0.125);
+        let xi = [
+            Float::with_val(PREC, 1.0 / 26.0),
+            Float::with_val(PREC, 1.0 / 8.0),
+            Float::with_val(PREC, 1.0 / 312.0),
+        ];
+        let redshift_max = Float::with_val(PREC, 3.0);
+        let redshift_samples = 9;
+        Self::new_with_params(
+            boundary,
+            observer_radius_fraction,
+            xi,
+            redshift_max,
+            redshift_samples,
+        )
     }
 
     pub fn build_past_light_cone(&self) -> Vec<LightConeSample> {

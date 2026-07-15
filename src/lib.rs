@@ -3423,21 +3423,47 @@ pub struct ShbtSimulator {
     projection: HolographicProjection,
     causal_point: CausalPoint,
     optimizer: BaryogenesisOptimizer,
+    particles: usize,
 }
 
 #[pymethods]
 impl ShbtSimulator {
     #[new]
     fn new() -> Self {
-        let boundary = StaticBoundary::new();
+        Self::with_config((26, 8, 312), 0.125, 3.0, 9, 512)
+    }
+
+    #[staticmethod]
+    fn with_config(
+        branch: (u32, u32, u32),
+        observer_radius_fraction: f64,
+        redshift_max: f64,
+        redshift_samples: usize,
+        particles: usize,
+    ) -> Self {
+        let (lepton_level, quark_level, parent_level) = branch;
+        let boundary = StaticBoundary::new_with_branch(lepton_level, quark_level, parent_level);
         let projection = HolographicProjection::new(boundary.clone());
-        let causal_point = CausalPoint::new(boundary.clone());
+
+        let xi = [
+            Float::with_val(EVAL_PREC, 1.0 / lepton_level as f64),
+            Float::with_val(EVAL_PREC, 1.0 / quark_level as f64),
+            Float::with_val(EVAL_PREC, 1.0 / parent_level as f64),
+        ];
+        let causal_point = CausalPoint::new_with_params(
+            boundary.clone(),
+            Float::with_val(EVAL_PREC, observer_radius_fraction),
+            xi,
+            Float::with_val(EVAL_PREC, redshift_max),
+            redshift_samples,
+        );
         let optimizer = BaryogenesisOptimizer::new(boundary.clone());
         Self {
             boundary,
             projection,
             causal_point,
             optimizer,
+            particles,
         }
     }
 
@@ -3446,7 +3472,7 @@ impl ShbtSimulator {
         let boundary_report = self.boundary.verify_equations();
         let projection_report = self.projection.verify_projection(&metric_slices);
         let memory_report = self.causal_point.verify_memory_budget();
-        let benchmark_delta = self.optimizer.run_benchmark(512);
+        let benchmark_delta = self.optimizer.run_benchmark(self.particles);
         let stress_energy_preserved = benchmark_delta.stress_energy_preserved;
         let baryogenesis_identity = self.optimizer.baryogenesis_identity();
         let eta_b = baryogenesis_identity.eta_b.clone();
@@ -3465,10 +3491,27 @@ impl ShbtSimulator {
         }
     }
 
+    fn baryogenesis_identity(&self) -> BaryogenesisIdentity {
+        self.optimizer.baryogenesis_identity()
+    }
+
+    fn baryogenesis_benchmark(&self) -> BenchmarkDelta {
+        self.optimizer.run_benchmark(self.particles)
+    }
+
+    fn crystallize_history(&self) -> Vec<CoordinateLogEntry> {
+        self.causal_point.crystallize_history()
+    }
+
     fn simulate_cosmology(&self, z_max: f64, samples: usize) -> Vec<BulkMetricSlice> {
-        let mut cp = CausalPoint::new(self.boundary.clone());
-        cp.redshift_max = Float::with_val(PREC, z_max);
-        cp.redshift_samples = samples;
+        let xi = self.causal_point.xi.clone();
+        let cp = CausalPoint::new_with_params(
+            self.boundary.clone(),
+            self.causal_point.observer_radius_fraction.clone(),
+            xi,
+            Float::with_val(EVAL_PREC, z_max),
+            samples,
+        );
         let slices = cp.projection.project_entropy_cascade();
         let cone = cp.build_past_light_cone();
         cone.iter()

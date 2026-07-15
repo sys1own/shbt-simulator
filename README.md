@@ -50,7 +50,8 @@ The paper and simulator are developed **in lockstep**:
 │       ├── baryogenesis.rs  # BaryogenesisOptimizer (η_B, de-rendering)
 │       └── causal_point.rs  # CausalPoint (observer memory, history)
 ├── examples/
-│   └── run_audit.py        # Python script to run the full audit
+│   └── run_audit.py        # Thin wrapper around shbt_simulate.py --mode audit
+├── shbt_simulate.py        # Customisable CLI/API for research runs
 ├── tests/
 │   └── test_shbt.rs        # Unit tests for all SHBT components
 ├── main.pdf                # The SHBT paper (formal theory)
@@ -107,7 +108,7 @@ import shbt_simulator
 
 ## 🧪 Run the Full Audit
 
-The main entry point is the Python script `examples/run_audit.py`. It constructs a `ShbtSimulator` object, runs the complete audit, and prints all key results.
+The main entry point is the Python script `examples/run_audit.py` (a thin wrapper around `shbt_simulate.py --mode audit`). It constructs a `ShbtSimulator` object, runs the complete audit, and prints all key results.
 
 ```bash
 python examples/run_audit.py
@@ -115,17 +116,52 @@ python examples/run_audit.py
 
 Expected output:
 
+```json
+{
+  "branch": [26, 8, 312],
+  "framing_defect (delta_fr)": 0.0,
+  "modular_invariant": true,
+  "zero_energy_locked": true,
+  "projection_dimension_26_to_4": true,
+  "eta_b": 6.449923359416e-10,
+  "stress_energy_preserved": true,
+  "projection_all_passed": true,
+  "memory_all_passed": true,
+  "metric_slices": 9,
+  "history_entries": 9
+}
 ```
-Branch: (26, 8, 312)
-Δ_fr: 0.0
-Modular invariant: True
-Zero-energy locked: True
-Projection dimension 26→4: True
-η_B: 6.449923359416e-10
-Stress-energy preserved: True
-Metric slices: 9
-Crystallized history entries: 9
+
+## 🎛️ Run custom simulations with `shbt_simulate.py`
+
+`shbt_simulate.py` is the programmable CLI and API entry point for research runs. It supports the same `ShbtSimulator` backend but exposes modes and parameters for custom studies.
+
+```bash
+python shbt_simulate.py --mode audit
+PYTHONPATH=target/release python shbt_simulate.py --mode all --branch 26 8 312 --output result.json --verbose
+python shbt_simulate.py --mode cosmology --redshift-max 3.0 --redshift-samples 9
+python shbt_simulate.py --mode baryogenesis --particles 1024
+python shbt_simulate.py --mode history --observer-radius-fraction 0.2
 ```
+
+Available modes are `audit`, `cosmology`, `baryogenesis`, `history`, and `all` (default).
+
+Programmatically:
+
+```python
+import shbt_simulate
+result = shbt_simulate.simulate({
+    "mode": "all",
+    "branch": (26, 8, 312),
+    "observer_radius_fraction": 0.125,
+    "redshift_max": 3.0,
+    "redshift_samples": 9,
+    "particles": 512,
+})
+print(result["audit"]["eta_b"])
+```
+
+## Python bindings
 
 ### Run all unit tests
 
@@ -191,3 +227,4 @@ If you use this repository or the SHBT framework in your research, please cite t
   year    = {2026},
   note    = {Available at \url{https://github.com/sys1own/shbt-simulator}}
 }
+```
