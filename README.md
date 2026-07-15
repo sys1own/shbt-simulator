@@ -23,6 +23,42 @@ The **paper** (`main.pdf`) is the mathematical formulation. The **simulator** is
 
 ---
 
+## ⚡ Quick Start (TL;DR)
+
+Clone, build, and run the full paper audit:
+
+```bash
+git clone https://github.com/sys1own/shbt-simulator.git
+cd shbt-simulator
+
+# Install Rust (if not already installed)
+curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
+source "$HOME/.cargo/env"
+
+# Install maturin and build the Python bindings
+pip install maturin
+maturin develop --release
+
+# Run the audit
+python shbt_simulate.py --mode audit
+```
+
+For custom simulations, explore the config file system or the CLI options described below.
+
+---
+
+## Other Minor Clarifications
+
+| Section | Suggested Enhancement |
+|---------|------------------------|
+| **Installation** | Mention that `maturin develop` installs the package in "editable" mode (useful for development). |
+| **Running with `PYTHONPATH`** | In the examples where `PYTHONPATH` is set (e.g., `PYTHONPATH=target/release python ...`), clarify that this is only needed if you haven't installed the wheel – otherwise you can just run `python shbt_simulate.py`. |
+| **Building on Colab** | Add a short note: "For Google Colab, see the notebook example." (You already have a notebook link, but a one‑liner helps.) |
+| **Paper reference** | Emphasize that `main.pdf` is the authoritative document; the README is the user manual. |
+| **Config file** | Ensure you actually have `config.default.yaml` in the repo – if not, mention that it will be created from a template. |
+
+---
+
 ## 🚀 Paper ⇄ Simulator Relationship
 
 The paper and simulator are developed **in lockstep**:
