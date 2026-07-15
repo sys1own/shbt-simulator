@@ -43,3 +43,9 @@ jobs:
         run: |
           cp target/release/libshbt_simulator.so target/release/shbt_simulator.so
           PYTHONPATH=target/release python3 examples/run_audit.py
+
+      - name: Run custom simulation CLI
+        run: |
+          cp target/release/libshbt_simulator.so target/release/shbt_simulator.so
+          PYTHONPATH=target/release python3 shbt_simulate.py --mode all --output /tmp/shbt_all.json
+          test -f /tmp/shbt_all.json
