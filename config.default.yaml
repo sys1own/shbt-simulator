@@ -25,3 +25,9 @@ plot: false
 
 # Enable verbose progress logging
 verbose: false
+
+# Logging configuration
+log_level: INFO      # DEBUG, INFO, WARNING, ERROR
+log_format: text     # text or json
+log_file: null       # optional path for a log file
+quiet: false         # suppress non-essential output

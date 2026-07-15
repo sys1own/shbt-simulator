@@ -260,6 +260,9 @@ output_dir: ./simulation_results
 export_formats: [json, csv]
 plot: true
 verbose: false
+log_level: INFO
+log_format: text
+quiet: false
 ```
 
 Run it with:
@@ -279,6 +282,41 @@ A default configuration is provided in [`config.default.yaml`](config.default.ya
 Results are written to `output_dir/<timestamp>/result.<fmt>` so repeated runs are organised automatically. Each run directory also contains a reproducibility log (`result.log`) and `result_run_info.json` with the simulator version, git commit/branch (when available), config, and summary.
 
 Use `--seed` or the `seed` config key to make Causal Point collapse selections reproducible.
+
+### Logging and output control
+
+`shbt_simulate.py` uses Python's `logging` module. The log level, format, and output destination are configurable:
+
+```bash
+python shbt_simulate.py --mode audit --log-level DEBUG
+python shbt_simulate.py --mode all --log-format json --log-file run.log
+python shbt_simulate.py --mode audit --quiet
+python shbt_simulate.py --mode audit --verbose
+```
+
+- `--log-level` accepts `DEBUG`, `INFO`, `WARNING`, or `ERROR` (default: `INFO`).
+- `--log-format json` emits structured JSON lines for key events, e.g. `{"event": "audit_complete", "eta_b": 6.449923359416e-10}`.
+- `--log-file` appends log messages to a file as well as the console.
+- `--quiet` (`-q`) suppresses non-essential console output and defaults the log level to `WARNING`.
+- `--verbose` (`-v`) is an alias for `--log-level DEBUG`.
+
+For `audit` and `all` modes, a clean ASCII summary table is printed at the end:
+
+```
++------------------------------------------------------+
+| SHBT Audit Summary                                   |
++------------------------------------------------------+
+| Branch                       | (26, 8, 312)           |
+| Framing defect (delta_fr)    | 0.0                    |
+| Modular invariant            | True                   |
+| Zero energy locked           | True                   |
+| Projection dimension 26 -> 4 | True                   |
+| eta_b                        | 6.449923359416131e-10  |
+| Stress energy preserved      | True                   |
+| Metric slices                | 9                      |
+| History entries              | 9                      |
++------------------------------------------------------+
+```
 
 ### Jupyter / Colab
 
