@@ -301,17 +301,3 @@ These are reused by the new SHBT modules where appropriate.
 This project is licensed under the MIT License – see the [LICENSE](LICENSE) file for details.
 
 ---
-
-## 🖇️ Citation
-
-If you use this repository or the SHBT framework in your research, please cite the paper:
-
-```bibtex
-@article{SHBT2026,
-  author  = {Author Name},
-  title   = {Static Holographic Boundary Theory},
-  journal = {arXiv},
-  year    = {2026},
-  note    = {Available at \url{https://github.com/sys1own/shbt-simulator}}
-}
-```
