@@ -8,7 +8,7 @@
 
 ---
 
-## 🧠 The Big Picture
+## The Big Picture
 
 SHBT postulates that the universe is described by a finite boundary register whose modular‑invariant pairing fixes:
 
@@ -23,7 +23,7 @@ The **paper** (`main.pdf`) is the mathematical formulation. The **simulator** is
 
 ---
 
-## ⚡ Quick Start (TL;DR)
+## Quick Start (TL;DR)
 
 Clone, build, and run the full paper audit:
 
@@ -43,7 +43,7 @@ maturin develop --release
 python shbt_simulate.py --mode audit
 ```
 
-## 🚀 Paper ⇄ Simulator Relationship
+## Paper ⇄ Simulator Relationship
 
 The paper and simulator are developed **in lockstep**:
 
@@ -57,7 +57,7 @@ The paper and simulator are developed **in lockstep**:
 
 ---
 
-## 📦 Repository Structure
+## Repository Structure
 
 ```
 .
@@ -84,7 +84,7 @@ The paper and simulator are developed **in lockstep**:
 
 ---
 
-## 🔧 Prerequisites
+## Prerequisites
 
 - **Rust** (1.80 or later) – [install via rustup](https://rustup.rs/)
 - **Python** (3.8 or later) – with `pip`
@@ -94,7 +94,7 @@ The paper and simulator are developed **in lockstep**:
 
 ---
 
-## 🏗️ Build & Install
+## Build & Install
 
 ### 1. Build the Rust library
 
@@ -130,7 +130,7 @@ import shbt_simulator
 
 ---
 
-## 🧪 Run the Full Audit
+## Run the Full Audit
 
 The main entry point is the Python script `examples/run_audit.py` (a thin wrapper around `shbt_simulate.py --mode audit`). It constructs a `ShbtSimulator` object, runs the complete audit, and prints all key results.
 
@@ -156,7 +156,7 @@ Expected output:
 }
 ```
 
-## 🎛️ Run custom simulations with `shbt_simulate.py`
+## Run custom simulations with `shbt_simulate.py`
 
 `shbt_simulate.py` is the programmable CLI and API entry point for research runs. It supports the same `ShbtSimulator` backend but exposes modes and parameters for custom studies.
 
@@ -318,7 +318,7 @@ All tests should pass, confirming that the simulator satisfies the algebraic con
 
 ---
 
-## 📊 Verifying the Paper’s Tables
+## Verifying the Paper’s Tables
 
 The simulator’s audit reports (`boundary_report`, `projection_report`, `memory_report`, `baryogenesis_identity`, `benchmark_delta`) contain every value that appears in the paper’s tables. You can compare them directly with the printed outputs from `run_audit.py`.
 
@@ -331,7 +331,7 @@ The paper is written so that the reader can, at any point, refer to the code and
 
 ---
 
-## 🧭 Navigating the Code
+## Navigating the Code
 
 ### Core SHBT components
 
@@ -354,7 +354,7 @@ These are reused by the new SHBT modules where appropriate.
 
 ---
 
-## 📜 License
+## License
 
 This project is licensed under the MIT License – see the [LICENSE](LICENSE) file for details.
 
